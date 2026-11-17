@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Process Traffic
+GenericName=Network Monitor
+Comment=See which apps talk to which hosts, how well, and why — and block them
+Exec=process-traffic
+Icon=io.github.networkgrafh
+Terminal=false
+Categories=Network;Monitor;
+Keywords=network;traffic;firewall;connections;bandwidth;
+StartupWMClass=io.github.networkgrafh

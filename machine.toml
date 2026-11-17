@@ -1,0 +1,15 @@
+# Read by `machine up` on every boot (see ~/Projects/_machine).
+apt = ["python3-gi-cairo"]   # for --screenshot; python3-gi + gir1.2-webkit2-4.1 are in the base image
+
+[[launchers]]
+id = "io.github.networkgrafh"
+name = "Process Traffic"
+comment = "Live graph of network data transfer by process"
+exec = "python3 {dir}/networkgrafh.py"
+icon = "icon.svg"
+categories = "System;Monitor;"
+
+# network needs this project was built with, entered on demand: `machine enter networkgrafh:geo-update`
+[modes.geo-update]
+description = "Refresh the DB-IP country file (monthly): python3 geo.py --update"
+domains = ["download.db-ip.com"]

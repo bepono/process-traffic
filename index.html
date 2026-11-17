@@ -1,0 +1,1386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Process Traffic</title>
+<style>
+:root {
+  --bg: #f5f5f7; --canvas: #fbfbfd; --panel: #ffffff; --raised: #ffffff;
+  --sidebar: #eeeef1; --text: #1d1d1f; --text2: #6e6e73; --text3: #a1a1a6;
+  --sep: rgba(0,0,0,.08); --sep-strong: rgba(0,0,0,.14); --fill: rgba(0,0,0,.045); --fill2: rgba(0,0,0,.08);
+  --accent: #0a66d8; --accent-fill: rgba(10,102,216,.12);
+  --good: #248a3d; --fair: #a87b00; --poor: #d9650b; --block: #d70015; --unknown: #8e8e93;
+  --good-fill: rgba(36,138,61,.12); --fair-fill: rgba(168,123,0,.13); --poor-fill: rgba(217,101,11,.13); --block-fill: rgba(215,0,21,.10);
+  --host: #b8b8be; --node-stroke: #ffffff; --edge-op: .5;
+  --float: rgba(255,255,255,.93); --float-border: rgba(0,0,0,.09); --float-shadow: 0 8px 28px rgba(0,0,0,.12); --dot: #dedee2; --chip-bg: rgba(251,251,253,.82);
+  --lane: #ebebea; --lane-border: #e1e1df; --lane-alert: #fdf0ef; --lane-alert-border: #f3c7c3; --card: #ffffff; --banner: #fff8e1; --banner-border: #f2e3b0; --banner-text: #5c4a00;
+  --shadow: 0 0 0 .5px rgba(0,0,0,.14), 0 10px 32px rgba(0,0,0,.14);
+  --sheet-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 18px 48px rgba(0,0,0,.22);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e20; --canvas: #18181a; --panel: #2a2a2d; --raised: #323236;
+    --sidebar: #232326; --text: #f5f5f7; --text2: #a1a1a6; --text3: #6e6e73;
+    --sep: rgba(255,255,255,.08); --sep-strong: rgba(255,255,255,.16); --fill: rgba(255,255,255,.06); --fill2: rgba(255,255,255,.1);
+    --accent: #3d8ef7; --accent-fill: rgba(61,142,247,.22);
+    --good: #32d74b; --fair: #ffd60a; --poor: #ff9f0a; --block: #ff6961; --unknown: #8e8e93;
+    --good-fill: rgba(50,215,75,.14); --fair-fill: rgba(255,214,10,.14); --poor-fill: rgba(255,159,10,.15); --block-fill: rgba(255,105,97,.15);
+    --host: #636368; --node-stroke: #18181a; --edge-op: .55;
+    --canvas: #151517; --float: rgba(35,35,39,.93); --float-border: #34343a; --float-shadow: 0 8px 24px rgba(0,0,0,.35); --dot: #2a2a2f; --chip-bg: rgba(21,21,23,.78);
+    --lane: #222225; --lane-border: #303034; --lane-alert: #2e1c1b; --lane-alert-border: #5a2b28; --card: #2a2a2d; --banner: #2f2a14; --banner-border: #4a4220; --banner-text: #f0dc9a;
+    --shadow: 0 0 0 .5px rgba(255,255,255,.12), 0 12px 32px rgba(0,0,0,.5);
+    --sheet-shadow: 0 0 0 .5px rgba(255,255,255,.14), 0 18px 40px rgba(0,0,0,.55);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+  font: 13px/1.38 -apple-system, BlinkMacSystemFont, "Inter", "Cantarell", "Noto Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.num, .val, td.r, .row span:last-child { font-variant-numeric: tabular-nums; }
+svg.i { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+#app { display: grid; grid-template-columns: 264px 1fr auto; grid-template-rows: 44px 1fr; height: 100%; }
+#toolbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--sep); background: var(--bg); min-width: 0; }
+#sidebar { grid-row: 2; background: var(--sidebar); border-right: 1px solid var(--sep); overflow-y: auto; padding: 12px 10px 24px; }
+#main { grid-row: 2; position: relative; background: var(--canvas); min-width: 0; overflow: hidden; }
+#inspector { grid-row: 2; width: 0; overflow: hidden; border-left: 1px solid transparent; background: var(--bg); transition: width .2s ease; }
+#inspector.open { width: 344px; border-left-color: var(--sep); }
+#inspector .inner { width: 344px; height: 100%; overflow-y: auto; padding: 14px 14px 28px; }
+body.nosidebar #app { grid-template-columns: 0 1fr auto; }
+body.nosidebar #sidebar { padding: 0; border: 0; overflow: hidden; }
+
+.seg { display: inline-flex; background: var(--fill); border-radius: 7px; padding: 2px; gap: 2px; flex: none; }
+.seg button { border: 0; background: none; height: 24px; padding: 0 10px; border-radius: 5px; color: var(--text); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.seg button:not(.on):hover { background: var(--fill); }
+.seg button:disabled { opacity: .4; }
+body.listview #lensSeg { visibility: hidden; }
+#scopeBtn { box-shadow: 0 0 0 .5px var(--sep-strong), 0 1px 1px rgba(0,0,0,.05); background: var(--raised); }
+#pauseBtn.paused { background: var(--fill2); color: var(--text); }
+.seg button.on { background: var(--raised); box-shadow: 0 0 0 .5px var(--sep-strong), 0 1px 2px rgba(0,0,0,.1); }
+.tbtn { border: 0; background: none; height: 28px; min-width: 28px; padding: 0 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; color: var(--text2); flex: none; white-space: nowrap; }
+.tbtn:hover { background: var(--fill); color: var(--text); }
+.tbtn.on { color: var(--accent); }
+.search { display: flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 7px; padding: 0 8px; height: 28px; color: var(--text2); flex: 0 1 230px; min-width: 110px; }
+.search input { border: 0; background: none; outline: none; width: 100%; color: var(--text); }
+.search input::placeholder { color: var(--text3); }
+.search:focus-within { box-shadow: 0 0 0 3px var(--accent-fill); }
+.spacer { flex: 1; min-width: 0; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); font-size: 12px; white-space: nowrap; }
+.status .d { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.status.paused .d { background: var(--text3); } .status.err .d { background: var(--poor); }
+.chip { font-size: 11.5px; font-weight: 600; height: 22px; padding: 0 8px; border-radius: 6px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; border: 0; }
+.chip { background: var(--fill); color: var(--text); font-weight: 500; }
+.chip .cd { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+.chip.demo .cd { background: var(--fair); } .chip.admin .cd { background: var(--accent); } .chip.cli .cd { background: var(--good); }
+button.chip:hover { background: var(--fill2); }
+
+.sec { margin-bottom: 18px; }
+.sec h3 { font-size: 11px; font-weight: 600; color: var(--text2); margin: 0 8px 4px; display: flex; justify-content: space-between; align-items: center; }
+#sidebar { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+#sidebar .group { background: color-mix(in srgb, var(--panel) 70%, transparent); box-shadow: none; border-radius: 10px; padding: 4px 0; }
+#sidebar .group > .row, #sidebar .group > .pad, #sidebar .rule { padding: 3px 12px; border-top: 0 !important; }
+#sidebar .row > span:last-child { white-space: normal; text-align: right; }
+#sidebar .group > .pad { padding-top: 6px; padding-bottom: 6px; }
+#sidebar .row { min-height: 24px; }
+#sidebar .sec { margin-bottom: 20px; }
+.ibtn { border: 0; background: none; color: var(--text3); padding: 0 2px; display: inline-flex; vertical-align: -2px; }
+.ibtn:hover { color: var(--accent); }
+.group { background: var(--panel); border-radius: 10px; box-shadow: 0 0 0 .5px var(--sep); overflow: hidden; }
+.group > .row, .group > .pad { padding: 7px 11px; }
+.group > .row + .row, .group > .pad + .row, .group > .row + .pad, .group > .pad + .pad { border-top: 1px solid var(--sep); }
+.row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; min-height: 30px; align-items: center; }
+.row > span:first-child { color: var(--text2); white-space: nowrap; }
+.row > span:last-child { text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.big { display: flex; gap: 12px; }
+.big > div { flex: 1; min-width: 0; }
+.big .lbl { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 4px; }
+.big .val { font-size: 21px; font-weight: 600; letter-spacing: -.02em; white-space: nowrap; line-height: 1.2; }
+.big .val small { font-size: 12px; font-weight: 500; color: var(--text2); margin-left: 2px; letter-spacing: 0; }
+.big .sub { font-size: 10.5px; color: var(--text3); }
+.spark { width: 100%; height: 40px; display: block; margin-top: 8px; }
+.meter { height: 5px; border-radius: 3px; background: var(--fill2); overflow: hidden; margin: 5px 0 2px; }
+.meter > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .5s; }
+.muted { color: var(--text2); } .faint { color: var(--text3); }
+.small { font-size: 11.5px; }
+.hdot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--unknown); }
+.hdot.good { background: var(--good); } .hdot.fair { background: var(--fair); } .hdot.poor { background: var(--poor); }
+.title-row { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
+.rule { padding: 8px 11px; border-top: 1px solid var(--sep); font-size: 12px; }
+.rule .name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+details.rule summary { list-style: none; cursor: default; } details.rule summary::-webkit-details-marker { display: none; }
+details.rule summary::before { content: "›"; color: var(--text3); width: 8px; display: inline-block; transition: transform .15s; } details.rule[open] summary::before { transform: rotate(90deg); }
+.rule .dom { color: var(--text2); font-size: 11.5px; margin-top: 1px; }
+.tag { font-size: 10.5px; padding: 0 5px; border-radius: 4px; background: var(--fill2); color: var(--text2); font-weight: 500; }
+.linkbtn { border: 0; background: none; color: var(--accent); padding: 0; font-size: 12px; }
+.linkbtn:hover { text-decoration: underline; }
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: grid; grid-template-columns: 16px 1fr; gap: 6px; padding: 6px; border-radius: 7px; font-size: 12px; }
+.feed li[data-id]:hover { background: var(--fill); }
+.feed .t { color: var(--text3); font-size: 10.5px; }
+.feed .ic { margin-top: 2px; color: var(--text2); }
+.feed .ic.new { color: var(--accent); } .feed .ic.blocked { color: var(--block); } .feed .ic.health { color: var(--fair); }
+.empty { color: var(--text3); font-size: 12px; padding: 4px 6px; }
+.bars { display: inline-flex; gap: 1.5px; align-items: flex-end; height: 11px; margin-right: 5px; vertical-align: -1px; }
+.bars i { width: 3px; background: var(--text2); border-radius: 1px; }
+.bars i.off { background: var(--fill2); }
+
+#chart { width: 100%; height: 100%; display: block; }
+.edge { fill: none; stroke-linecap: round; stroke-opacity: var(--edge-op); }
+.flow { fill: none; stroke-linecap: round; stroke-dasharray: 0 16; animation: flow linear infinite; pointer-events: none; }
+@keyframes flow { to { stroke-dashoffset: -32; } }
+.edge.connecting { stroke: var(--text3) !important; stroke-dasharray: 4 4; stroke-opacity: .9; }
+.edge.refused { stroke: var(--block) !important; stroke-dasharray: 2 3; stroke-opacity: .75; }
+.edge.self { stroke: var(--text3) !important; stroke-dasharray: 1 4; stroke-opacity: .9; }
+.edge.udp { stroke-dasharray: 1 3; stroke-width: 2.5px !important; stroke-opacity: .8; }
+.edge.hit { stroke: transparent !important; stroke-width: 12px !important; stroke-dasharray: none; }
+.node .lbl { fill: var(--text); paint-order: stroke; stroke: var(--canvas); stroke-linejoin: round; pointer-events: none; transition: opacity .15s; }
+.node.host .lbl { fill: var(--text2); }
+.node .lbl.hidden { opacity: 0; }
+.node:hover .lbl.hidden, .node.sel .lbl.hidden { opacity: 1; }
+.node .body { cursor: pointer; }
+.node.self .body { fill: var(--canvas) !important; stroke: var(--text3) !important; stroke-dasharray: 2 2; }
+.node.self .lbl { fill: var(--text3); font-style: italic; }
+.node.fw .body { fill: var(--block-fill) !important; stroke: var(--block) !important; }
+.node.refusedOnly .body { fill: var(--canvas) !important; stroke: var(--block) !important; stroke-dasharray: 2 2; }
+.node.sel .body { stroke: var(--accent) !important; stroke-width: 3px !important; stroke-dasharray: none !important; }
+.node .mono { font-family: inherit; }
+.node.dim { opacity: .35; } .edge.dim, .flow.dim { opacity: .2; }
+.node.dim .lbl { opacity: .55; }
+.lbl .plain { fill: var(--fair); } .lbl .own { fill: var(--text3); }
+.lbl .hl { fill: var(--fair); } .lbl .hl.poor { fill: var(--poor); }
+#legend { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 14px; flex-wrap: nowrap; overflow: hidden; font-size: 11px; color: var(--text2);
+  background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(20px); padding: 6px 10px; border-radius: 8px; box-shadow: 0 0 0 .5px var(--sep); max-width: calc(100% - 70px); }
+#legend .k { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+#legend .sw { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+#zoomctl { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(20px); border-radius: 8px; box-shadow: 0 0 0 .5px var(--sep); overflow: hidden; }
+#zoomctl button { border: 0; background: none; width: 30px; height: 28px; color: var(--text2); display: grid; place-items: center; }
+
+/* ===== C · map-first: the map fills the window; everything else floats over it ===== */
+.float { background: var(--float); border: 1px solid var(--float-border); box-shadow: var(--float-shadow); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+body.view-map #app { grid-template-columns: 1fr !important; grid-template-rows: 1fr; }
+body.view-map #sidebar { display: none; }
+body.view-map #main { grid-row: 1; grid-column: 1; }
+body.view-map #toolbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20; border-radius: 12px; padding: 6px; gap: 8px;
+  max-width: calc(100% - 32px); background: var(--float); border: 1px solid var(--float-border); box-shadow: var(--float-shadow); backdrop-filter: blur(20px); }
+body.view-map #toolbar .spacer { display: none; }
+body.view-map #toolbar .seg button { height: 30px; }
+body.view-map #chart { background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1px, transparent 1px); background-size: 22px 22px; }
+body.view-map #inspector { position: fixed; top: 72px; right: 16px; width: 340px !important; max-height: calc(100% - 88px); border-radius: 14px; z-index: 15;
+  display: none; overflow: auto; background: var(--float); border: 1px solid var(--float-border) !important; box-shadow: var(--float-shadow); backdrop-filter: blur(20px); transition: none; }
+body.view-map #inspector.open { display: block; }
+body.view-map #inspector .inner { width: auto; height: auto; overflow: visible; }
+body.view-map #inspector .group, body.view-map #inspector .status-rows { background: color-mix(in srgb, var(--panel) 70%, transparent); }
+body.view-map.showside #sidebar { display: block; position: fixed; top: 72px; left: 16px; width: 280px; max-height: calc(100% - 150px); border-radius: 14px; z-index: 16;
+  background: var(--float); border: 1px solid var(--float-border); box-shadow: var(--float-shadow); backdrop-filter: blur(20px); -webkit-mask-image: none; mask-image: none; }
+#summary { display: none; position: absolute; top: 72px; left: 16px; width: 256px; flex-direction: column; gap: 10px; z-index: 5; }
+body.view-map #summary { display: flex; }
+body.view-map.showside #summary { display: none; }
+#summary .card { border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+#summary .tnum { display: flex; gap: 14px; align-items: baseline; font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+#summary .tnum small { font-size: 12px; color: var(--text2); font-weight: 400; }
+#summary .kvr { display: flex; justify-content: space-between; gap: 10px; }
+#summary .kvr > span:first-child { color: var(--text2); }
+#summary .more { align-self: flex-start; }
+#pills { display: none; position: absolute; left: 16px; bottom: 16px; gap: 6px; flex-wrap: wrap; font-size: 12px; z-index: 5; max-width: calc(100% - 100px); }
+body.view-map #pills { display: flex; }
+#pills .pill2 { border-radius: 999px; padding: 6px 10px; display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+#pills .sw { width: 14px; height: 0; border-top: 3px solid; display: inline-block; }
+#pills button.pill2 { border: 1px solid var(--float-border); }
+body.view-map #legendBtn { display: none; }
+body.view-map #legend { left: 16px; bottom: 56px !important; }
+body.view-map #zoomctl { right: 16px; bottom: 16px; border-radius: 10px; background: var(--float); border: 1px solid var(--float-border); box-shadow: var(--float-shadow); }
+body.view-map #zoomctl button { width: 44px; height: 44px; }
+body.view-map #demoBanner { top: 66px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%); border-radius: 999px; padding: 5px 14px; font-size: 11.5px;
+  background: var(--float); border: 1px solid var(--float-border); box-shadow: var(--float-shadow); }
+body.view-map .emptymap { top: 84px; }
+body.view-map .node .lbl { stroke: var(--canvas); }
+
+#sidebar { grid-column: 1; } #main { grid-column: 2; } #inspector { grid-column: 3; }
+body.view-map #main { grid-column: 1; }
+/* ===== D · Firewall lanes ===== */
+#fwview { position: absolute; inset: 0; overflow: auto; display: none; background: var(--bg); }
+body.fwview #fwview { display: block; }
+body.fwview #chart, body.fwview #legend, body.fwview #legendBtn, body.fwview #zoomctl, body.fwview #emptyMap, body.fwview #list, body.fwview #pills, body.fwview #summary { display: none !important; }
+body.fwview #app { grid-template-columns: 0 1fr auto; }
+body.fwview #sidebar { display: none; }
+body.fwview #lensSeg { visibility: hidden; }
+body.fwview.demo #fwview { top: 28px; }
+.fw-head { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 18px 24px; background: var(--panel); border-bottom: 1px solid var(--sep); }
+.fw-head h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.fw-head .sub { font-size: 13px; color: var(--text2); }
+.fw-stats { display: flex; gap: 20px; font-size: 13px; }
+.fw-stats > div { display: flex; flex-direction: column; }
+.fw-stats .l { color: var(--text2); font-size: 12px; } .fw-stats .v { font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
+.fw-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 24px; background: var(--banner); border-bottom: 1px solid var(--banner-border); font-size: 13px; color: var(--banner-text); }
+.fw-banner b { font-weight: 600; }
+.fw-banner .btn { margin-left: auto; min-height: 32px; }
+.fw-lanes { padding: 20px 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; align-items: start; }
+.lane { background: var(--lane); border: 1px solid var(--lane-border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lane.alert { background: var(--lane-alert); border-color: var(--lane-alert-border); }
+.lane-h { display: flex; flex-direction: column; gap: 3px; padding: 2px 2px 6px; }
+.lane-h .t { display: flex; align-items: center; gap: 8px; }
+.lane-h h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.lane.alert h2 { color: var(--block); }
+.lane-h .n { margin-left: auto; font-size: 12px; color: var(--text2); }
+.lane-h .s { font-size: 12px; color: var(--text2); }
+.lane-h .why { font-size: 11.5px; color: var(--text3); }
+.fcard { background: var(--card); border: 1px solid var(--lane-border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04); cursor: default; text-align: left; font: inherit; color: inherit; width: 100%; }
+.fcard:hover { border-color: var(--sep-strong); }
+.fcard.sel { outline: 2px solid var(--accent); outline-offset: -1px; }
+.lane.alert .fcard { border-color: var(--lane-alert-border); }
+.fcard .h { font-family: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace; font-size: 12px; word-break: break-all; line-height: 1.35; }
+.fcard .m { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.fcard .m > * { white-space: nowrap; }
+.fcard .app { background: var(--fill2); border-radius: 5px; padding: 2px 6px; color: var(--text); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 48px; }
+.fcard .tot { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text2); flex: none; }
+.fcard .acts { display: flex; gap: 6px; margin-top: 2px; }
+.fcard .acts .btn { flex: 1; justify-content: center; min-height: 30px; font-size: 12px; }
+.lane .empty { font-size: 12px; color: var(--text3); padding: 6px 4px; }
+#zoomctl button:hover { background: var(--fill); color: var(--text); }
+#zoomctl button + button { border-top: 1px solid var(--sep); }
+.foot { font-size: 11px; color: var(--text2); line-height: 1.35; }
+.big .sub { color: var(--text2) !important; }
+#sidebar { padding-bottom: 40px; }
+#demoBanner { position: absolute; top: 0; left: 0; right: 0; text-align: center; font-size: 12px; padding: 5px; background: var(--fill2); color: var(--text); z-index: 2; border-bottom: 1px solid var(--sep); }
+#demoBanner::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #e0a800; margin-right: 7px; }
+#demoBanner:empty { display: none; }
+body.demo #list { top: 28px; }
+#legendBtn { position: absolute; left: 12px; bottom: 12px; }
+#legend { bottom: 46px !important; flex-wrap: wrap !important; width: 300px; flex-direction: column; gap: 6px !important; padding: 12px !important;
+  background: var(--raised) !important; box-shadow: var(--shadow) !important; z-index: 6; }
+#legend.closed { display: none; }
+.foot .linkbtn { font-size: 11px; }
+.emptymap { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); font-size: 12.5px; color: var(--text2); text-align: center; }
+
+#list { position: absolute; inset: 0; overflow: auto; display: none; }
+body.listview #list { display: block; }
+body.listview #chart, body.listview #legend, body.listview #legendBtn, body.listview #zoomctl, body.listview #emptyMap { display: none; }
+table.data { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
+.data th { position: sticky; top: 0; background: var(--canvas); text-align: left; font-weight: 500; color: var(--text2); font-size: 11.5px; padding: 7px 10px;
+  border-bottom: 1px solid var(--sep); white-space: nowrap; user-select: none; z-index: 1; }
+.data th:hover { color: var(--text); }
+.data th.r, .data td.r { text-align: right; }
+.data th.sorted { color: var(--text); font-weight: 600; }
+table.data { table-layout: fixed; }
+.data td { padding: 0 10px; height: 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.data tbody tr:nth-child(even) td { background: var(--fill); }
+.data tbody tr:hover td { background: var(--fill2); }
+.data tbody tr.sel td { background: var(--accent); color: #fff; }
+.data tbody tr.sel td .muted, .data tbody tr.sel td .faint { color: rgba(255,255,255,.8); }
+body.inspecting .data .opt { display: none; }
+body.inspecting .data col.opt { display: none; visibility: collapse; }
+
+.data th:last-child, .data td:last-child { padding-right: 14px; }
+
+.ins-head { display: flex; gap: 11px; align-items: center; margin-bottom: 12px; }
+.ins-icon { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; flex: none; color: #fff; font-weight: 600; font-size: 17px; overflow: hidden;
+  box-shadow: inset 0 0 0 .5px var(--sep-strong); }
+.ins-icon img { width: 30px; height: 30px; }
+.ins-icon.img { background: var(--panel); }
+.ins-icon.host { background: var(--fill2); color: var(--text2); }
+.ins-icon.host svg { width: 22px; height: 22px; stroke-width: 1.4; }
+.ins-title { font-size: 15px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: keep-all; overflow-wrap: normal; user-select: text; }
+.ins-sub { color: var(--text2); font-size: 12px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ins-close { margin-left: auto; align-self: flex-start; }
+.identity { color: var(--text2); font-size: 12.5px; line-height: 1.4; margin: -4px 2px 10px; }
+.status-rows { margin-bottom: 12px; }
+.srow { display: flex; gap: 9px; padding: 8px 11px; font-size: 12.5px; line-height: 1.4; }
+.srow + .srow { border-top: 1px solid var(--sep); }
+.srow svg.i { margin-top: 2px; width: 15px; height: 15px; }
+.srow.ok svg { color: var(--good); } .srow.notice svg { color: var(--text2); } .srow.fair svg { color: var(--fair); }
+.srow.poor svg { color: var(--poor); } .srow.refused svg { color: var(--block); } .srow.warn svg { color: var(--block); }
+.srow.warn, .srow.poor, .srow.refused { background: color-mix(in srgb, var(--panel) 100%, transparent); }
+.ghead { font-size: 11px; font-weight: 600; color: var(--text2); margin: 14px 4px 5px; }
+.fact { padding: 6px 12px; font-size: 12.5px; display: grid; grid-template-columns: 96px 1fr; gap: 0 10px; }
+.fact + .fact { border-top: 1px solid var(--sep); }
+.fact .k { color: var(--text2); font-size: 12px; padding-top: 1px; }
+.fact .v { min-width: 0; overflow-wrap: anywhere; }
+.fact .src { grid-column: 2; }
+.fact .kind { margin-left: 2px; vertical-align: 1px; cursor: help; }
+.fact .src { color: var(--text3); font-size: 11px; margin-top: 1px; }
+.fact .src b { font-weight: 500; color: var(--text2); }
+details.tech { margin-top: 14px; }
+details.tech summary { font-size: 11px; font-weight: 600; color: var(--text2); margin: 0 4px 5px; }
+.kind { font-size: 10.5px; font-weight: 600; padding: 0 5px; border-radius: 4px; }
+.kind.exact { color: var(--good); background: var(--good-fill); } .kind.derived { color: var(--accent); background: var(--accent-fill); }
+.kind.inferred, .kind.partial { color: var(--text2); background: var(--fill2); } .kind.missing { color: var(--block); background: var(--block-fill); }
+.actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; position: relative; min-width: 0; }
+.actions .btn:not(.more) { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.btn { border: 0; border-radius: 6px; height: 26px; padding: 0 11px; background: var(--raised); box-shadow: 0 0 0 .5px var(--sep-strong), 0 1px 1px rgba(0,0,0,.05);
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.btn:hover:not(:disabled) { background: color-mix(in srgb, var(--raised) 92%, var(--text)); }
+.btn:disabled { opacity: .45; }
+.btn.primary { background: var(--accent); color: #fff; box-shadow: none; }
+.btn.destructive { background: var(--block); color: #fff; box-shadow: none; }
+.btn.more { width: 28px; padding: 0; justify-content: center; margin-left: auto; }
+.menu { position: absolute; right: 0; top: 30px; background: var(--raised); border-radius: 8px; box-shadow: var(--shadow); padding: 4px; z-index: 5; min-width: 220px; display: none; }
+.menu.open { display: block; }
+.menu button { display: flex; width: 100%; border: 0; background: none; padding: 5px 9px; border-radius: 5px; font-size: 12.5px; gap: 8px; align-items: center; text-align: left; }
+.menu button:hover { background: var(--accent); color: #fff; }
+.note { font-size: 11.5px; color: var(--text2); margin-top: 8px; display: flex; gap: 6px; align-items: flex-start; }
+.note .linkbtn { font-size: 11.5px; }
+.chart-cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); padding: 8px 12px 0; border-top: 1px solid var(--sep); }
+.chart-wrap { padding: 4px 12px 10px; }
+details.raw { margin-top: 14px; font-size: 11px; }
+details.raw summary { color: var(--text2); }
+details.raw pre { background: var(--fill); padding: 8px; border-radius: 6px; overflow: auto; max-height: 240px; font-size: 10.5px; }
+
+#tip { position: fixed; pointer-events: none; background: color-mix(in srgb, var(--raised) 94%, transparent); backdrop-filter: blur(24px);
+  border-radius: 8px; padding: 8px 10px; box-shadow: var(--shadow); display: none; max-width: 300px; font-size: 12px; z-index: 20; }
+#tip .t { font-weight: 600; margin-bottom: 2px; word-break: break-word; }
+#tip .r { display: flex; justify-content: space-between; gap: 16px; color: var(--text2); }
+#tip .r span:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
+#scrim { position: fixed; inset: 0; padding-top: 44px; background: rgba(0,0,0,.22); display: none; z-index: 30; justify-content: center; align-items: flex-start; }
+#scrim.open { display: flex; }
+.sheet { width: min(580px, calc(100% - 32px)); background: var(--raised); border-radius: 0 0 12px 12px; box-shadow: var(--sheet-shadow); padding: 0 20px;
+  animation: drop .18s ease-out; max-height: calc(100vh - 80px); overflow: auto; }
+.sheet h2 { position: sticky; top: 0; background: var(--raised); padding: 16px 0 8px; margin: 0 !important; z-index: 1; }
+.sheet .rowbtns { position: sticky; bottom: 0; background: var(--raised); padding: 12px 0 16px; margin-top: 8px !important; }
+@keyframes drop { from { transform: translateY(-12px); opacity: 0; } }
+.sheet h2 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.sheet p { margin: 0 0 10px; color: var(--text2); }
+.sheet .rowbtns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.sheet label { display: block; font-size: 12px; color: var(--text2); margin: 10px 0 4px; }
+.sheet input, .sheet select, .sheet textarea { width: 100%; border: 0; border-radius: 6px; padding: 6px 8px; background: var(--fill); outline: none; }
+.sheet input:focus, .sheet select:focus, .sheet textarea:focus { box-shadow: 0 0 0 3px var(--accent-fill); }
+.callout { background: var(--fair-fill); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 12px; margin: 6px 0; display: flex; gap: 7px; }
+.callout svg { color: var(--fair); margin-top: 1px; }
+.cov { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cov td { vertical-align: top; padding: 8px 6px; border-top: 1px solid var(--sep); }
+.cov td:first-child { width: 168px; font-weight: 600; }
+.cov td:nth-child(2) { width: 82px; }
+.cov td:first-child { width: 150px !important; }
+#toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(16px); opacity: 0; background: var(--raised); box-shadow: var(--shadow);
+  padding: 8px 12px 8px 14px; border-radius: 10px; font-size: 12.5px; transition: all .22s; z-index: 40; pointer-events: none; display: flex; gap: 12px; align-items: center; }
+#toast.show { opacity: 1; transform: translateX(-50%); pointer-events: auto; }
+#err { position: absolute; inset: 0; display: none; place-items: center; text-align: center; color: var(--text2); padding: 16px; background: var(--canvas); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .flow { animation: none; display: none; } #inspector { transition: none; } }
+@media (max-width: 1000px) {
+  #app { grid-template-columns: 0 1fr auto; }
+  #sidebar { display: none; }
+  body.showside #app { grid-template-columns: 264px 1fr auto; }
+  body.showside #sidebar { display: block; }
+  .hide-narrow { display: none !important; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-side" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></symbol>
+  <symbol id="i-map" viewBox="0 0 16 16"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="1.6"/><circle cx="12" cy="12" r="1.6"/><path d="M5.8 7.2 10.5 4.7M5.8 8.8l4.7 2.5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9"/></symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M5 3.5v9l7-4.5z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 4.9v.1"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13V3.5M4 7.5l4-4 4 4"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="M8 3v9.5M4 8.5l4 4 4-4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 16 16"><path d="M8 1.8 2.8 3.8v4c0 3.2 2.2 5.4 5.2 6.4 3-1 5.2-3.2 5.2-6.4v-4z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3 8h10"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></symbol>
+  <symbol id="i-block" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="m3.8 12.2 8.4-8.4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="m5.3 8.2 1.9 1.9 3.6-4"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 16 16"><path d="M8 2 1.8 13h12.4z"/><path d="M8 6.5v3M8 11.3v.1"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 16 16"><path d="M1.8 6.2a9 9 0 0 1 12.4 0M4 8.6a6 6 0 0 1 8 0M6.2 11a3 3 0 0 1 3.6 0"/><circle cx="8" cy="13.2" r=".5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.8 1.9 2.6 4 2.6 6.2S9.8 12.3 8 14.2C6.2 12.3 5.4 10.2 5.4 8S6.2 3.7 8 1.8z"/></symbol>
+  <symbol id="i-house" viewBox="0 0 16 16"><path d="M2.5 7.5 8 2.8l5.5 4.7M4 6.5v7h8v-7"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 16 16"><path d="M3.5 8h.01M8 8h.01M12.5 8h.01" stroke-width="2.4"/></symbol>
+  <symbol id="i-unplug" viewBox="0 0 16 16"><path d="M10 2.5v3M6 2.5v3M4.5 5.5h7v2.5a3.5 3.5 0 0 1-7 0zM8 11.5v2.5"/><path d="m2 14 12-12"/></symbol>
+  <symbol id="i-shieldok" viewBox="0 0 16 16"><path d="M8 1.8 2.8 3.8v4c0 3.2 2.2 5.4 5.2 6.4 3-1 5.2-3.2 5.2-6.4v-4z"/><path d="m5.6 8 1.7 1.7 3.1-3.4"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 16 16"><path d="M2.3 11.5a6 6 0 1 1 11.4 0"/><path d="m8 9.5 2.6-3"/><circle cx="8" cy="9.6" r=".6"/></symbol>
+  <symbol id="i-amount" viewBox="0 0 16 16"><path d="M3 13V9M8 13V4M13 13V7"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="m5 6.5 3 3 3-3"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.6" fill="currentColor"/></symbol>
+</svg>
+
+<div id="app">
+  <div id="toolbar" role="toolbar" aria-label="Process Traffic">
+    <button class="tbtn" id="sideBtn" title="Show or hide the sidebar" aria-label="Toggle sidebar"><svg class="i"><use href="#i-side"/></svg></button>
+    <span class="seg" id="viewSeg" role="tablist" aria-label="View">
+      <button data-v="map" class="on" role="tab" title="Map of apps and the hosts they talk to (1)"><svg class="i"><use href="#i-map"/></svg>Map</button>
+      <button data-v="list" role="tab" title="Every connection in a sortable table (2)"><svg class="i"><use href="#i-list"/></svg>List</button>
+      <button data-v="fw" role="tab" title="Your firewall rules and what each one lets through (3)"><svg class="i"><use href="#i-shield"/></svg>Firewall</button>
+    </span>
+    <span class="seg" id="lensSeg" aria-label="Show">
+      <button data-l="amount" class="on" title="Show: circle size = data moved since each connection opened"><svg class="i"><use href="#i-amount"/></svg>Amount</button>
+      <button data-l="activity" title="Show: circle size = how fast data is moving right now"><svg class="i"><use href="#i-bolt"/></svg>Speed</button>
+      <button data-l="health" title="Show: colour connections by delay and data loss"><svg class="i"><use href="#i-gauge"/></svg>Health</button>
+    </span>
+    <label class="search"><svg class="i"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Filter apps, hosts, owners" spellcheck="false" aria-label="Filter"></label>
+    <span class="spacer"></span>
+    <span id="chips" style="display:inline-flex;gap:6px"></span>
+    <button class="chip" id="scopeBtn" title="What this view can see"></button>
+    <button class="tbtn status" id="pauseBtn" title="Pause updates (Space)" aria-label="Pause updates"><span class="d" id="liveDot"></span><span id="liveText">Connecting…</span></button>
+    <button class="tbtn" id="howBtn" title="How it's measured — what's exact, what's inferred, and what this can't see" aria-label="How it's measured"><svg class="i"><use href="#i-info"/></svg></button>
+  </div>
+
+  <aside id="sidebar" aria-label="Overview">
+    <div class="sec">
+      <h3>Traffic now</h3>
+      <div class="group">
+        <div class="pad">
+          <div class="big">
+            <div><div class="lbl"><svg class="i"><use href="#i-up"/></svg>Upload</div><div class="val" id="vOut">–</div><div class="sub num" id="pOut"></div></div>
+            <div><div class="lbl"><svg class="i"><use href="#i-down"/></svg>Download</div><div class="val" id="vIn">–</div><div class="sub num" id="pIn"></div></div>
+          </div>
+          <svg class="spark" id="spark" preserveAspectRatio="none" role="img" aria-label="Traffic over the last minutes"></svg>
+        </div>
+        <div class="pad" title="Share of what the network interface carried in the last 30 s that belongs to connections shown here">
+          <div class="row" style="min-height:0;padding:0" title="TCP bytes of the apps shown, +5% for packet headers, divided by what the network interface carried in the last 30 s. UDP/QUIC isn't counted."><span>Matched to apps</span><span id="covText">–</span></div>
+          <div class="meter"><i id="covBar" style="width:0"></i></div>
+          <div class="foot" id="covHint"></div>
+        </div>
+        <div class="pad foot" id="observer"></div>
+      </div>
+    </div>
+    <div class="sec" id="claudeSec" hidden><h3>Claude connection</h3><div class="group" id="claudeCard"></div></div>
+    <div class="sec"><h3>Firewall</h3><div class="group" id="fwCard"></div></div>
+    <div class="sec"><h3>Network</h3><div class="group" id="netCard"></div></div>
+    <div class="sec"><h3>Activity</h3><ul class="feed" id="feed"></ul></div>
+  </aside>
+
+  <main id="main">
+    <div id="summary" aria-label="Summary"></div>
+    <div id="pills" aria-label="Key"></div>
+    <div id="fwview" aria-label="Firewall"></div>
+    <svg id="chart" role="img" aria-label="Map of apps and remote hosts"></svg>
+    <div id="emptyMap" class="emptymap"></div>
+    <div id="list"></div>
+    <div id="demoBanner"></div>
+    <button class="btn" id="legendBtn" aria-expanded="false" title="What the shapes, lines and colours mean"><svg class="i"><use href="#i-info"/></svg>Legend</button>
+    <div id="legend"></div>
+    <div id="zoomctl">
+      <button id="zIn" title="Zoom in" aria-label="Zoom in"><svg class="i"><use href="#i-plus"/></svg></button>
+      <button id="zOut" title="Zoom out" aria-label="Zoom out"><svg class="i"><use href="#i-minus"/></svg></button>
+      <button id="zFit" title="Fit everything" aria-label="Fit everything"><svg class="i"><use href="#i-fit"/></svg></button>
+    </div>
+    <div id="err"></div>
+  </main>
+
+  <aside id="inspector" aria-label="Details"><div class="inner" id="insInner"></div></aside>
+</div>
+
+<div id="tip" role="tooltip"></div>
+<div id="scrim"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div id="toast" role="status"></div>
+
+<script src="vendor/d3.v7.9.0.min.js"></script>
+<script>
+"use strict";
+const qs = new URLSearchParams(location.search);
+const API = s => "api/" + s + (s.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(qs.get("t") || "");
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const _htmlCache = new WeakMap();
+function setHTML(el, html) { if (_htmlCache.get(el) !== html) { el.innerHTML = html; _htmlCache.set(el, html); } }
+Object.defineProperty(HTMLElement.prototype, "cachedHTML", { set(v) { setHTML(this, v); } });
+const icon = (n, cls = "") => `<svg class="i ${cls}"><use href="#i-${n}"/></svg>`;
+const native = window.webkit?.messageHandlers?.pt;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let snap = null, view = "map", lens = "amount", query = "", selected = null, paused = false, showSelf = false;
+let nodes = [], links = [], explainCache = null, sortKey = "total", sortDir = -1, zoomK = 1;
+const byId = new Map(), nodeHist = new Map();
+let lastPoll = 0, failures = 0, lastCli = 0;
+
+const fmtBytes = b => { b = +b || 0; if (b < 1) return "0 B"; const u = ["B", "KB", "MB", "GB", "TB"], i = Math.min(4, Math.floor(Math.log10(b) / 3)); const v = b / 1000 ** i; return (i ? v.toFixed(v < 10 ? 1 : 0) : Math.round(v)) + " " + u[i]; };
+const fmtRate = r => fmtBytes(r) + "/s";
+const fmtRateParts = r => { const [a, b] = fmtRate(r).split(" "); return `${a}<small>${b}</small>`; };
+const fmtPct = x => x == null ? "–" : x > 0 && x < .001 ? "<0.1%" : (x * 100).toFixed(x < .1 ? 1 : 0) + "%";
+const fmtMs = x => x == null ? "–" : (x < 10 ? x.toFixed(1) : Math.round(x)) + " ms";
+const plural = (n, w, many) => `${n} ${n === 1 ? w : many || w + "s"}`;
+const clock = t => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const clockS = t => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+const untoken = s => String(s).replace(/\{t:(\d+)\}/g, (_, t) => clockS(+t));
+const shortOrg = o => (o || "").replace(/,? (Inc|LLC|Ltd|PBC|Corporation|Corp|GmbH|B\.V|AG|S\.A)\.?$/i, "");
+const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
+const flag = cc => !cc || cc === "LAN" ? "" : String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+const countryName = cc => { if (!cc) return ""; if (cc === "LAN") return "Local network"; try { return regionNames.of(cc); } catch { return cc; } };
+const hostName = d => d.dns || (d.netOrg || d.org ? (d.org || shortOrgF(d.netOrg)) + " · " + d.ip : d.ip || d.label);
+const shortOrgF = o => (o || "").replace(/,? (Inc|LLC|Ltd|PBC|Corporation|Corp|GmbH|B\.V|AG|S\.A)\.?$/i, "");
+function leftTrunc(s, max = 28) {   // keep the registrable end of a name: "…logs.datadoghq.com"
+  if (!s || s.length <= max || /^[\d.:]+$/.test(s)) return s;
+  const p = s.split("."); let out = p.slice(-2).join(".");
+  for (let i = p.length - 3; i >= 0 && out.length + p[i].length + 2 <= max; i--) out = p[i] + "." + out;
+  return "…" + out;
+}
+function midTrunc(s, max = 26) {
+  if (!s || s.length <= max) return s;
+  const p = s.split(".");
+  if (p.length > 2 && !/^[\d.:]+$/.test(s)) {
+    const tail = p.slice(-2).join("."), first = p[0].length > 14 ? p[0].slice(0, 13) : p[0];
+    const c = first + "…" + tail; if (c.length <= max + 6) return c;
+    return "…" + tail;
+  }
+  return s.slice(0, Math.ceil(max / 2) - 1) + "…" + s.slice(-Math.floor(max / 2));
+}
+const ago = t => { const d = Math.max(0, Date.now() / 1000 - t); return d < 45 ? "just now" : d < 3600 ? Math.round(d / 60) + " min ago" : clock(t); };
+const healthWord = { good: "Good", fair: "Fair", poor: "Poor" };
+const healthGlyph = { good: "", fair: "", poor: "" };
+const HW = { good: "Good", fair: "Slow", poor: "Struggling" };
+
+// app identity colours: no reds, ambers, greens (status) and no accent blue (selection)
+const palette = ["#30a2b5", "#a2845e", "#af52de", "#5b7083", "#3a8fa8", "#8c6d4f", "#9a4fc4", "#6e7f91"];
+const pcolor = d3.scaleOrdinal(palette);
+const hColor = h => `var(--${h || "unknown"})`;
+
+// ---------- map ----------
+const svg = d3.select("#chart");
+const root = svg.append("g");
+const gEdges = root.append("g"), gFlow = root.append("g"), gHit = root.append("g"), gNodes = root.append("g");
+const zoom = d3.zoom().scaleExtent([0.2, 4]).on("zoom", e => { root.attr("transform", e.transform); if (Math.abs(e.transform.k - zoomK) > .01) { zoomK = e.transform.k; scaleText(); } })
+  .on("end", () => placeLabels());
+svg.call(zoom).on("dblclick.zoom", null);
+svg.on("click", () => select(null));
+const sim = d3.forceSimulation()
+  .force("link", d3.forceLink().id(d => d.id).distance(l => l.kind === "host" ? 58 + (l.target.r || 0) : 120).strength(0.5))
+  .force("charge", d3.forceManyBody().strength(d => d.type === "process" || d.fw ? -560 : -110).distanceMax(560))
+  .force("collide", d3.forceCollide().radius(d => d.r + 7))
+  .force("x", d3.forceX().strength(0.05)).force("y", d3.forceY().strength(0.06))
+  .alphaDecay(0.04).on("end", () => placeLabels());
+let mainW = 800, mainH = 600, sparkW = 240;
+function resize() { const r = $("#main").getBoundingClientRect(); mainW = r.width; mainH = r.height; svg.attr("viewBox", [-r.width / 2, -r.height / 2, r.width, r.height]); }
+new ResizeObserver(resize).observe($("#main"));
+new ResizeObserver(e => { sparkW = e[0].contentRect.width || sparkW; }).observe($("#spark"));
+
+const udpOnly = l => (l.protos || []).length === 1 && l.protos[0] === "udp";
+const metric = d => lens === "activity" ? (d.rateOut || 0) + (d.rateIn || 0) : (d.accOut || 0) + (d.accIn || 0);
+
+function buildGraph() {
+  const q = query.trim().toLowerCase();
+  const nm = new Map(snap.nodes.map(n => [n.id, n]));
+  let ns = snap.nodes.map(n => ({ ...n }));
+  let ls = snap.links.map(l => ({ ...l, kind: nm.get(l.target)?.type === "host" ? "host" : "proc" }));
+  const refused = ns.filter(n => n.refused && n.refusedOnly);
+  if (refused.length) {
+    ns.push({ id: "fw", type: "process", fw: true, label: "Unknown app", sent: 0, recv: 0, rateIn: 0, rateOut: 0 });
+    refused.forEach(h => ls.push({ source: "fw", target: h.id, refused: true, kind: "host", sent: 0, recv: 0, rateIn: 0, rateOut: 0, conns: h.refused }));
+  }
+  if (showSelf && snap.observer) {
+    ns.push({ id: "self:server", type: "process", self: "server", label: "Process Traffic · collector", sent: 0, recv: 0, rateOut: 0, rateIn: 0 });
+    snap.observer.clients.forEach((c, i) => {
+      const id = "self:viewer:" + i;
+      ns.push({ id, type: "process", self: "viewer", label: c.label, rateOut: c.rateIn, rateIn: c.rateOut, sent: 0, recv: 0 });
+      ls.push({ source: id, target: "self:server", self: true, kind: "proc", rateOut: c.rateIn, rateIn: c.rateOut, sent: 0, recv: 0, conns: c.requests });
+    });
+  }
+  if (q) {
+    const hit = new Set(ns.filter(n => matches(n, q)).map(n => n.id));
+    ls.forEach(l => { if (hit.has(l.source) && !l.self) hit.add(l.target); if (hit.has(l.target) && !l.self && l.source !== "fw") hit.add(l.source); });
+    ns = ns.filter(n => hit.has(n.id)); ls = ls.filter(l => hit.has(l.source) && hit.has(l.target));
+  }
+  return { ns, ls };
+}
+function matches(n, q) {
+  return [n.label, n.dns, n.ip, n.service, n.org, n.netOrg, n.app, n.desc, n.cc && countryName(n.cc), ...(n.names || [])].some(v => v && String(v).toLowerCase().includes(q));
+}
+function hostLabel(d) {
+  const own = d.org || (d.netOrg && shortOrg(d.netOrg));
+  const name = d.dns ? (d.id === selected ? d.dns : leftTrunc(d.dns, 28)) : midTrunc(d.ip, 22);
+  const f = showFlags && !d.hosting && d.cc && d.cc !== "LAN" ? flag(d.cc) + " " : "";
+  return f + name;
+}
+let dupOwners = new Set(), showFlags = (() => { try { return localStorage.getItem("pt.flags") === "1"; } catch { return false; } })();
+function writeLabels(sel) {
+  sel.select("text.lbl").each(function (d) {
+    const t = d3.select(this); t.text(labelText(d));
+    if (!d.dns && d.type === "host" && (d.org || d.netOrg)) t.append("tspan").attr("class", "own").text(" · " + (d.org || shortOrg(d.netOrg)));
+    if (d.plaintext) t.append("tspan").attr("class", "plain").text(" · not encrypted");
+    if (lens === "health" && (d.health === "fair" || d.health === "poor")) t.append("tspan").attr("class", "hl " + d.health).text(/resent/.test(d.verdictWhy || "") ? " · losing packets" : d.health === "poor" ? " · struggling" : " · slow");
+  });
+}
+function labelText(d) { return d.self ? d.label : d.fw ? "Unknown app · blocked attempts" : d.type === "process" ? d.label : hostLabel(d); }
+
+function renderMap(restart) {
+  const { ns, ls } = buildGraph();
+  const fresh = new Map();
+  nodes = ns.map(n => {
+    const old = byId.get(n.id);
+    const o = old ? Object.assign(old, n) : Object.assign(n, seedPos(n.id));
+    fresh.set(n.id, o); return o;
+  });
+  byId.clear(); fresh.forEach((v, k) => byId.set(k, v));
+  links = ls.map(l => ({ ...l, key: l.source + "→" + l.target }));
+
+  const real = nodes.filter(n => !n.self && !n.fw);
+  const nMax = d3.max(real, metric) || 1, lMax = d3.max(links.filter(l => !l.self && !l.refused), metric) || 1;
+  const r = d3.scaleSqrt().domain([0, nMax]).range([10, 20]);
+  const w = d3.scaleLog().domain([1, Math.max(2, lMax)]).range([1.5, 6]).clamp(true);
+  const owners = d3.rollup(nodes.filter(n => n.type === "host" && !n.dns), v => v.length, n => n.org || shortOrg(n.netOrg));
+  dupOwners = new Set([...owners].filter(([, c]) => c > 1).map(([o]) => o));
+  nodes.forEach(n => { n.verdictWhy = (n.verdict?.status || []).map(x => x.text).join(" ");
+    n.r = n.self ? 6 : n.fw ? 12 : n.refusedOnly ? 6 : n.type === "process" ? r(metric(n)) : Math.min(10, Math.max(4, r(metric(n)) * .5));
+    n._text = labelText(n) + (!n.dns && n.type === "host" && (n.org || n.netOrg) ? " · " + (n.org || shortOrg(n.netOrg)) : "") + (n.plaintext ? " · not encrypted" : "") + (lens === "health" && (n.health === "fair" || n.health === "poor") ? " · high delay" : ""); });
+  links.forEach(l => l.w = l.self || l.refused ? 1.5 : l.connecting === l.conns ? 1.5 : w(Math.max(1, metric(l))));
+  const edgeColor = d => d.kind === "proc" ? "var(--text3)" : lens === "health" ? hColor(d.health) : pcolor(byId.get(d.source.id ?? d.source)?.label);
+
+  gEdges.selectAll("path").data(links, d => d.key)
+    .join(enter => enter.append("path").attr("class", "edge").style("opacity", 0).call(s => s.transition("fade").duration(350).style("opacity", 1)))
+    .attr("class", d => "edge" + (d.self ? " self" : "") + (d.refused ? " refused" : "") + (!d.refused && d.connecting && d.connecting === d.conns ? " connecting" : "") + (udpOnly(d) ? " udp" : ""))
+    .attr("stroke", edgeColor).attr("stroke-width", d => lens === "health" && d.health ? Math.max(2.5, d.w) : d.w);
+  const live = reduceMotion || lens !== "activity" ? [] : links.filter(l => !l.refused && !l.self && l.rateOut + l.rateIn > 0 && l.connecting !== l.conns)
+    .sort((a, b) => (b.rateOut + b.rateIn) - (a.rateOut + a.rateIn)).slice(0, 14);
+  gFlow.selectAll("path").data(live, d => d.key).join("path").attr("class", "flow")
+    .attr("stroke", edgeColor).attr("stroke-width", d => d.w + 2.2)
+    .style("animation-duration", d => Math.max(.5, 3.2 - Math.log10(d.rateOut + d.rateIn) * .42) + "s");
+  gHit.selectAll("path").data(links, d => d.key).join("path").attr("class", "edge hit")
+    .on("mousemove", (e, d) => showTip(e, linkTip(d))).on("mouseleave", hideTip)
+    .on("click", (e, d) => { e.stopPropagation(); select(d.target.id ?? d.target); });
+
+  const nSel = gNodes.selectAll("g.node").data(nodes, d => d.id)
+    .join(enter => {
+      const g = enter.append("g").call(d3.drag().on("start", dragStart).on("drag", dragged).on("end", dragEnd));
+      g.append("circle").attr("class", "ring").attr("r", 0).attr("fill", "none").attr("stroke-width", 2);
+      g.append("rect").attr("class", "body tile").attr("rx", 0);
+      g.filter(d => !d.icon && d.type === "process" && !d.self && !d.fw).append("text").attr("class", "mono").attr("text-anchor", "middle").attr("dy", ".35em").style("pointer-events", "none");
+      g.append("circle").attr("class", "body").attr("r", 0);
+      g.filter(d => d.icon).append("image").attr("class", "appicon").attr("href", d => API("icon?p=" + encodeURIComponent(d.label))).style("pointer-events", "none");
+      g.append("text").attr("class", "lbl").attr("text-anchor", "middle");
+      return g;
+    });
+  nSel.attr("class", d => "node " + d.type + (d.self ? " self" : "") + (d.fw ? " fw" : "") + (d.refusedOnly ? " refusedOnly" : "") + (d.id === selected ? " sel" : ""))
+    .attr("aria-label", d => d.type === "host" ? hostName(d) : d.label);
+  const isTile = d => d.type === "process" && !d.self && !d.fw;
+  nSel.select("rect.tile").style("display", d => isTile(d) ? null : "none")
+    .attr("fill", d => d.icon ? "var(--raised)" : pcolor(d.label)).attr("stroke", d => d.icon ? "var(--sep-strong)" : "none").attr("stroke-width", 1)
+    .transition().duration(400).attr("x", d => -d.r).attr("y", d => -d.r).attr("width", d => d.r * 2).attr("height", d => d.r * 2).attr("rx", d => d.r * .45);
+  nSel.select("text.mono").text(d => d.label[0].toUpperCase()).attr("font-size", d => Math.max(9, d.r * .95)).attr("fill", "#fff").attr("font-weight", 600);
+  nSel.select("circle.body").style("display", d => isTile(d) ? "none" : null)
+    .attr("fill", d => d.type === "process" ? (d.icon ? "transparent" : pcolor(d.label)) : "var(--host)")
+    .attr("stroke", d => d.icon ? "var(--sep-strong)" : "var(--node-stroke)").attr("stroke-width", d => d.icon ? 1 : 1.5)
+    .transition().duration(400).attr("r", d => d.r);
+  nSel.select("image.appicon").attr("x", d => -d.r * .8).attr("y", d => -d.r * .8).attr("width", d => d.r * 1.6).attr("height", d => d.r * 1.6);
+  nSel.select("circle.ring")
+    .attr("stroke", d => d.blockedHere ? "var(--block)" : lens === "health" && d.type === "host" && (d.health === "fair" || d.health === "poor") ? hColor(d.health) : "none")
+    .attr("stroke-dasharray", d => d.blockedHere ? "2 2" : null)
+    .attr("stroke-width", d => lens === "health" && d.health === "poor" ? 3 : 2)
+    .transition().duration(400).attr("r", d => d.r + 3.5);
+  writeLabels(nSel);
+  nSel.on("mousemove", (e, d) => showTip(e, nodeTip(d))).on("mouseleave", hideTip)
+      .on("click", (e, d) => { e.stopPropagation(); if (!d.self) select(selected === d.id ? null : d.id); });
+  scaleText();
+  selE = gEdges.selectAll("path"); selF = gFlow.selectAll("path"); selH = gHit.selectAll("path"); selN = gNodes.selectAll("g.node");
+
+  sim.nodes(nodes); sim.force("link").links(links); sim.force("collide").radius(d => d.r + 7);
+  // only shake the layout when something appeared or disappeared; size changes just settle gently
+  const sig = nodes.map(n => n.id).join("|") + "#" + links.map(l => l.key).join("|");
+  if (sig !== lastSig) { sim.alpha(Math.max(sim.alpha(), lastSig ? 0.18 : 0.6)).restart(); lastSig = sig; }
+  else if (restart === "lens") sim.alpha(Math.max(sim.alpha(), 0.06)).restart();
+  applyFocus(); renderLegend(); renderObserver();
+  const real2 = nodes.filter(n => !n.self && !n.fw);
+  $("#emptyMap").cachedHTML = !query && real2.length < 5 && !snap.root ? `Only your own apps are shown. <button class="linkbtn" data-admin>Show all processes…</button>` : "";
+}
+let tickN = 0, lastSig = "";
+function seedPos(id) {   // stable starting point per node: the same map every time the app opens
+  let h = 2166136261; for (const c of id) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  const a = ((h >>> 0) % 3600) / 3600 * Math.PI * 2, d = 60 + ((h >>> 12) % 200);
+  return { x: Math.cos(a) * d, y: Math.sin(a) * d };
+}
+function arc(d) { const s = d.source, t = d.target, dr = Math.hypot(t.x - s.x, t.y - s.y) * 1.8; return `M${s.x},${s.y}A${dr},${dr} 0 0,1 ${t.x},${t.y}`; }
+let selE, selF, selH, selN;
+function ticked() {
+  if (!selE) return;
+  selE.attr("d", arc); selF.attr("d", arc); selH.attr("d", arc);
+  selN.attr("transform", d => `translate(${d.x},${d.y})`);
+  if (++tickN % 40 === 0) placeLabels();
+}
+function scaleText() {
+  const k = zoomK;
+  gNodes.selectAll("text.lbl").attr("font-size", d => (d.type === "host" ? 10.5 : 11.5) / k).attr("stroke-width", 3.5 / k)
+    .attr("font-weight", d => d.type === "process" && !d.self ? 500 : 400);
+}
+// greedy label placement: apps first, then biggest; below → right → left → above; hide if nothing fits (shown on hover)
+function placeLabels() {
+  if (view !== "map" || !nodes.length) return;
+  const _t0 = performance.now(); try { placeLabelsInner(); } finally { PERF.labels[0]++; PERF.labels[1] += performance.now() - _t0; }
+}
+function placeLabelsInner() {
+  const k = zoomK, G = 60 / k, grid = new Map();   // spatial hash: only nearby nodes/labels are compared
+  const cellsOf = b => { const out = []; for (let gx = Math.floor(b[0] / G); gx <= Math.floor(b[2] / G); gx++) for (let gy = Math.floor(b[1] / G); gy <= Math.floor(b[3] / G); gy++) out.push(gx + "," + gy); return out; };
+  const add = (b, item) => cellsOf(b).forEach(c => { let l = grid.get(c); if (!l) grid.set(c, l = []); l.push(item); });
+  nodes.forEach(c => add([c.x - c.r - 2, c.y - c.r - 2, c.x + c.r + 2, c.y + c.r + 2], { n: c, b: [c.x - c.r - 2, c.y - c.r - 2, c.x + c.r + 2, c.y + c.r + 2] }));
+  const order = [...nodes].sort((a, b) => (b.type === "process") - (a.type === "process") || b.r - a.r);
+  const place = new Map();
+  const collides = (b, self) => cellsOf(b).some(c => (grid.get(c) || []).some(o => o.n !== self && b[0] < o.b[2] && b[2] > o.b[0] && b[1] < o.b[3] && b[3] > o.b[1]));
+  for (const n of order) {
+    const fs = (n.type === "host" ? 10.5 : 11.5) / k, tw = labelWidth(n) / k, th = fs * 1.2, gap = 3 / k;
+    const o = n.r + gap + 4 / k, dg = (n.r + gap) * .75;
+    const cands = [["middle", 0, o + fs * .8], ["start", o, fs * .35], ["end", -o, fs * .35], ["middle", 0, -o],
+      ["start", dg, dg + fs * .8], ["end", -dg, dg + fs * .8], ["start", dg, -dg], ["end", -dg, -dg]];
+    let ok = null;
+    for (const [anchor, dx, dy] of cands) {
+      const x0 = n.x + dx - (anchor === "middle" ? tw / 2 : anchor === "end" ? tw : 0), y0 = n.y + dy - fs * .95;
+      const b = [x0, y0, x0 + tw, y0 + th];
+      if (!collides(b, n)) { ok = [anchor, dx, dy]; add(b, { n: null, b }); break; }
+    }
+    place.set(n.id, ok);
+  }
+  gNodes.selectAll("g.node").select("text.lbl").each(function (d) {
+    const p = place.get(d.id), sel = d3.select(this);
+    if (p) sel.attr("text-anchor", p[0]).attr("x", p[1]).attr("y", p[2]).classed("hidden", false);
+    else sel.attr("text-anchor", "middle").attr("x", 0).attr("y", d.r + 3 / k + (d.type === "host" ? 10.5 : 11.5) / k).classed("hidden", true);
+  });
+}
+const _cv = document.createElement("canvas").getContext("2d");
+function labelWidth(n) {
+  if (n._lw && n._lwText === n._text) return n._lw;
+  _cv.font = (n.type === "host" ? "400 10.5px" : "500 11.5px") + " Inter, Cantarell, 'Noto Sans', sans-serif";
+  n._lwText = n._text; n._lw = _cv.measureText(n._text || "").width + 4; return n._lw;
+}
+function applyFocus() {
+  if (!selected || !byId.has(selected)) { gNodes.selectAll("g.node").classed("dim", false); gEdges.selectAll("path").classed("dim", false); gFlow.selectAll("path").classed("dim", false); return; }
+  const keep = new Set([selected]);
+  links.forEach(l => { const s = l.source.id ?? l.source, t = l.target.id ?? l.target; if (s === selected || t === selected) { keep.add(s); keep.add(t); } });
+  const off = l => (l.source.id ?? l.source) !== selected && (l.target.id ?? l.target) !== selected;
+  gNodes.selectAll("g.node").classed("dim", d => !keep.has(d.id));
+  gEdges.selectAll("path").classed("dim", off); gFlow.selectAll("path").classed("dim", off);
+}
+function renderLegend() {
+  const k = (sw, t, tip = "") => `<span class="k" title="${esc(tip)}">${sw}${t}</span>`;
+  const line = c => `<span class="sw" style="border-color:${c}"></span>`;
+  const dash = (c, s = "dashed") => `<span class="sw" style="border-top-style:${s};border-color:${c}"></span>`;
+  let h;
+  if (lens === "health") {
+    const rules = snap?.healthRules || "";
+    h = k(line("var(--good)"), "Good", rules) + k(line("var(--fair)"), "Slow", rules) + k(line("var(--poor)"), "Struggling", rules) + k(line("var(--unknown)"), "Not rated (idle, UDP, connecting)") +
+      `<span class="k faint">Yellow/orange = performance only, not a security problem</span>`;
+  } else {
+    h = k(`<span class="hdot" style="background:${palette[0]}"></span>`, "App (colour = which app)") + k(`<span class="hdot" style="background:var(--host)"></span>`, "Host") +
+        k(line("var(--text2)"), lens === "activity" ? "Size = speed now" : "Size = data since monitoring started") + (reduceMotion || lens !== "activity" ? "" : k("<span style='letter-spacing:2px'>• • •</span>", "Dots = flowing now")) +
+        k(dash("var(--text2)", "dotted"), "UDP/QUIC (not measured)");
+  }
+  h += k(dash("var(--text3)"), "Connecting") + k(dash("var(--block)", "dashed"), "Blocked by the firewall") + k(`<span style="color:var(--fair)">· not encrypted</span>`, "Likely unencrypted (http, port 80)") +
+    `<label class="k" style="gap:4px"><input type="checkbox" id="flagsBox" ${showFlags ? "checked" : ""}> Country flags</label>`;
+  const el = $("#legend");
+  if (el._key === h) return;
+  el._key = h; el.innerHTML = h;
+  $("#flagsBox").onchange = e => { showFlags = e.target.checked; try { localStorage.setItem("pt.flags", showFlags ? "1" : "0"); } catch {} render(true); };
+}
+function renderObserver() {
+  const cs = snap.observer?.clients || [], tot = d3.sum(cs, c => c.rateOut + c.rateIn);
+  $("#observer").cachedHTML = cs.length ? `Process Traffic itself: ${fmtRate(tot)} of local reads (not internet) <button class="ibtn" title="Process Traffic reads its own collector every ${snap.pollEvery} s. It stays on this computer, sends nothing out and isn't counted above.">${icon("info")}</button> <button class="linkbtn" id="selfBtn">${showSelf ? "Hide" : "Show"}</button>` : "";
+  const b = $("#selfBtn"); if (b) b.onclick = () => { showSelf = !showSelf; render(true); };
+}
+function dragStart(e, d) { if (!e.active) sim.alphaTarget(0.12).restart(); d.fx = d.x; d.fy = d.y; }
+function dragged(e, d) { d.fx = e.x; d.fy = e.y; }
+function dragEnd(e, d) { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }
+function fit(animate = true) {
+  if (!nodes.length) return;
+  resize();   // the window may still be settling into its size: measure now, not from the last observer callback
+  const b = { width: mainW, height: mainH }, xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const [x0, x1, y0, y1] = [d3.min(xs) - 100, d3.max(xs) + 100, d3.min(ys) - 50, d3.max(ys) + 60];
+  const k = Math.min(1.5, .94 * Math.min(b.width / (x1 - x0), (b.height - 60) / (y1 - y0)));
+  const t = d3.zoomIdentity.scale(k).translate(-(x0 + x1) / 2, -(y0 + y1) / 2 - 10 / k);
+  (animate ? svg.transition().duration(450) : svg).call(zoom.transform, t);
+}
+
+// ---------- tooltips ----------
+const trow = (k, v) => `<div class="r"><span>${k}</span><span>${v}</span></div>`;
+function nodeTip(d) {
+  if (d.self) return `<div class="t">${esc(d.label)}</div><div class="muted small">Process Traffic reading its own collector. Stays on this computer; not counted in totals.</div>`;
+  if (d.fw) return `<div class="t">Unknown app — blocked attempts</div><div class="muted small">Something on this computer tried to reach these hosts and the firewall blocked it. The firewall log doesn't record which app.</div>`;
+  if (d.type === "process") return `<div class="t">${esc(d.label)}</div>` + (d.desc ? `<div class="muted small">${esc(d.desc)}</div>` : "") +
+    trow("Data so far", "↑ " + fmtBytes(d.sent) + "  ↓ " + fmtBytes(d.recv)) + trow("Now", "↑ " + fmtRate(d.rateOut) + "  ↓ " + fmtRate(d.rateIn));
+  return `<div class="t">${esc(hostName(d))}</div><div class="muted small">${esc(d.service ? d.org + " · " + d.service : d.netOrg || "")}${d.dns ? "" : " · " + esc(d.ip)}</div>` +
+    (d.refusedOnly ? trow("Refused", plural(d.refused, "time") + " in 10 min") : trow("Data so far", fmtBytes(d.sent + d.recv)) + (d.health ? trow("Health", healthGlyph[d.health] + " " + healthWord[d.health]) : ""));
+}
+function linkTip(d) {
+  if (d.refused) return `<div class="t">Refused ${plural(d.conns, "time")}</div><div class="muted small">The firewall rejected attempts to reach ${esc(hostName(d.target))}.</div>`;
+  if (d.self) return `<div class="t">This app's own monitoring</div><div class="muted small">${plural(d.conns, "request")} in the last ${snap.pollEvery} s, on this computer only.</div>`;
+  return `<div class="t">${esc(d.source.label)} → ${esc(d.target.type === "host" ? hostName(d.target) : d.target.label)}</div>` +
+    (d.kind === "proc" ? `<div class="muted small">A connection between two apps on this computer.</div>` : "") +
+    trow("Connections", d.conns + (d.connecting ? ` (${d.connecting} connecting)` : "")) + trow("Data so far", "↑ " + fmtBytes(d.sent) + "  ↓ " + fmtBytes(d.recv)) +
+    trow("Now", "↑ " + fmtRate(d.rateOut) + "  ↓ " + fmtRate(d.rateIn)) +
+    (d.health ? trow("Round trip", fmtMs(d.rtt) + (d.minRtt ? " (best " + fmtMs(d.minRtt) + ")" : "")) + trow("Health", healthWord[d.health]) : trow("Health", esc(d.healthWhy || "–")));
+}
+const tip = $("#tip");
+function showTip(e, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const tw = tip.offsetWidth, th = tip.offsetHeight; let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + tw > innerWidth - 8) x = e.clientX - tw - 14; if (y + th > innerHeight - 8) y = e.clientY - th - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+// ---------- list ----------
+const COLS = [["app", "App"], ["host", "Host"], ["owner", "Owner", 0, 1], ["remote", "Address", 0, 1], ["total", "Total", 1], ["rate", "Now ↑ ↓", 1, 1],
+  ["rtt", "Round trip", 1, 1], ["health", "Health"], ["fw", "Firewall"]];
+function listRows() {
+  const nm = new Map(snap.nodes.map(n => [n.id, n])), q = query.trim().toLowerCase();
+  const rows = snap.links.map(l => {
+    const s = nm.get(l.source), t = nm.get(l.target), isHost = t.type === "host";
+    return { id: t.id, s, t, l, app: s.label, host: isHost ? hostName(t) : t.label + " (on this computer)", owner: isHost ? (t.org || t.netOrg || "") : "This computer",
+      remote: isHost ? (t.ip.includes(":") ? `[${t.ip}]` : t.ip) + ":" + (l.ports || []).join(",") + " " + (l.protos || []).join("+") : "loopback",
+      total: udpOnly(l) ? null : (l.accOut || 0) + (l.accIn || 0), rate: udpOnly(l) ? null : l.rateOut + l.rateIn, up: l.rateOut, down: l.rateIn, rtt: l.rtt, retr: l.retr, health: l.health || "", cc: t.cc, cdn: t.hosting,
+      fw: !isHost ? "Local" : t.blockedHere ? "Blocked by you" : t.grant ? "✓ " + t.grant.grant : t.kind === "lan" ? "Local network" : snap.policy?.lockdown ? (t.ruleChecked ? "Still open from before" : "No rule") : "" };
+  });
+  snap.nodes.filter(n => n.refusedOnly).forEach(t => rows.push({ id: t.id, s: null, t, l: null, app: "", host: hostName(t), owner: t.org || t.netOrg || "",
+    remote: t.ip + ":" + (t.ports || []).join(","), total: -1, rate: -1, rtt: null, retr: null, health: "", refused: t.refused, cc: t.cc, cdn: t.hosting,
+    fw: "Blocked ×" + t.refused }));
+  return rows.filter(r => !q || matches(r.t, q) || (r.s && matches(r.s, q)));
+}
+function renderList() {
+  document.body.classList.toggle("inspecting", !!selected);
+  const rows = listRows().sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if ((x == null || x === "") && (y == null || y === "")) return 0; if (x == null || x === "") return 1; if (y == null || y === "") return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir;
+  });
+  const tips = { total: "Uploaded + downloaded since Process Traffic started watching (never goes down)", rate: "Upload and download speed right now", fw: "Which firewall rule allowed it, or whether it was blocked" };
+  const th = COLS.map(([k, t, r, opt]) => `<th title="${tips[k] || ""}" data-k="${k}" class="${r ? "r " : ""}${opt ? "opt " : ""}${sortKey === k ? "sorted" : ""}" aria-sort="${sortKey === k ? (sortDir < 0 ? "descending" : "ascending") : "none"}">${t}${sortKey === k ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("");
+  const hcell = r => r.refused ? `<span class="faint">—</span>` :
+    r.health === "good" ? `<span class="muted">Good</span>` : r.health ? `<span class="hdot ${r.health}"></span> ${HW[r.health]}` : `<span class="faint" title="${esc(r.l?.healthWhy || "")}">${esc(/^idle/.test(r.l?.healthWhy || "") ? "Idle" : /UDP/.test(r.l?.healthWhy || "") ? "Not measured" : /connect|reply/.test(r.l?.healthWhy || "") ? "Connecting" : "—")}</span>`;
+  const fcell = r => `<span title="${esc(r.fw)}">` + (r.refused ? `<span class="hdot" style="background:var(--block)"></span> ${esc(r.fw)}` : r.fw === "No rule" ? `<span style="color:var(--fair)">No rule</span>` : `<span class="muted">${esc(r.fw || "—")}</span>`) + `</span>`;
+  const td = rows.map(r => `<tr data-id="${esc(r.id)}" class="${r.id === selected ? "sel" : ""}">
+    <td>${r.refused ? `<span class="faint">Unknown app</span>` : esc(r.app)}</td>
+    <td title="${esc(r.host)}">${esc(r.host)}${r.t.plaintext ? ` <b style="color:var(--fair);font-size:10.5px">http</b>` : ""}${r.t.isNew ? ` <span class="tag">New</span>` : ""}</td>
+    <td class="opt muted">${esc(r.owner)}</td><td class="opt muted num">${r.cdn ? "" : flag(r.cc)} ${esc(r.remote)}</td>
+    <td class="r">${r.total == null || r.total < 0 ? `<span class="faint" title="UDP/QUIC: Linux keeps no byte counts">—</span>` : fmtBytes(r.total)}</td><td class="r opt">${r.rate == null || r.rate < 0 ? `<span class="faint">—</span>` : `↑ ${fmtRate(r.up)} ↓ ${fmtRate(r.down)}`}</td>
+    <td class="r opt">${fmtMs(r.rtt)}</td><td>${hcell(r)}</td><td>${fcell(r)}</td></tr>`).join("");
+  const widths = { app: 118, owner: 140, remote: 190, total: 86, rate: 150, rtt: 84, health: 104, fw: 128 };
+  const cols = COLS.map(([k, , , opt]) => `<col class="${opt ? "opt" : ""}" ${widths[k] ? `style="width:${widths[k]}px"` : ""}>`).join("");
+  $("#list").innerHTML = `<table class="data"><colgroup>${cols}</colgroup><thead><tr>${th}</tr></thead><tbody>${td || `<tr><td colspan="9" class="empty">No connections${query ? " match the filter" : ""}.</td></tr>`}</tbody></table>`;
+}
+$("#list").addEventListener("click", e => {
+  const h = e.target.closest("th"); if (h) { const k = h.dataset.k; sortDir = sortKey === k ? -sortDir : (["app", "host", "owner", "remote", "health", "fw"].includes(k) ? 1 : -1); sortKey = k; renderList(); return; }
+  const tr = e.target.closest("tr[data-id]"); if (tr) select(tr.dataset.id);
+});
+
+// ---------- sidebar ----------
+function bars(sig) { const n = sig > -55 ? 4 : sig > -65 ? 3 : sig > -75 ? 2 : 1; return `<span class="bars" aria-label="${n} of 4 bars">${[4, 6, 8, 11].map((h, i) => `<i style="height:${h}px" class="${i < n ? "" : "off"}"></i>`).join("")}</span>`; }
+function renderSidebar() {
+  const t = snap.totals, h = snap.history;
+  $("#vOut").innerHTML = fmtRateParts(t.out); $("#vIn").innerHTML = fmtRateParts(t.in);
+  const mins = Math.max(1, Math.round(h.length * snap.pollEvery / 60));
+  $("#pOut").textContent = "peak " + fmtRate(d3.max(h, d => d[1]) || 0) + " · " + mins + " min";
+  $("#pIn").textContent = "peak " + fmtRate(d3.max(h, d => d[2]) || 0) + " · " + mins + " min";
+  const sp = d3.select("#spark"), W = sparkW, H = 40;
+  const x = d3.scaleLinear().domain([0, Math.max(1, h.length - 1)]).range([0, W]);
+  const y = d3.scaleLinear().domain([0, d3.max(h, d => Math.max(d[1] + d[2], d[3] + d[4])) || 1]).range([H - 1, 3]);
+  sp.attr("viewBox", `0 0 ${W} ${H}`);
+  sp.selectAll("path.a").data([h]).join("path").attr("class", "a").attr("d", d3.area().x((d, i) => x(i)).y0(H).y1(d => y(d[1] + d[2])).curve(d3.curveMonotoneX)).attr("fill", "var(--accent-fill)").attr("stroke", "var(--accent)").attr("stroke-width", 1.2);
+  sp.selectAll("path.l").data([h]).join("path").attr("class", "l").attr("d", d3.line().x((d, i) => x(i)).y(d => y(d[3] + d[4])).curve(d3.curveMonotoneX)).attr("fill", "none").attr("stroke", "var(--text3)").attr("stroke-dasharray", "2 2");
+  sp.select("title").remove(); sp.append("title").text(`Last ${mins} min. Blue: connections shown here. Dashed: everything the network interface carried.`);
+  const cov = t.coverage;
+  $("#covText").textContent = cov == null ? "— (too little traffic)" : cov < .05 && !snap.root ? "almost none — hidden in this view" : Math.round(cov * 100) + "% of " + ((snap.ifaces.find(i => i.default) || {}).kind === "wifi" ? "Wi-Fi" : "network") + " traffic";
+  $("#covBar").style.width = (cov == null ? 0 : cov * 100) + "%";
+  $("#covHint").cachedHTML = cov == null || cov > .95 ? "" : `The rest is traffic this view can't attribute <button class="ibtn" data-how title="${esc("Not attributed: " + (snap.coverageCauses || []).join(", "))}">${icon("info")}</button>`;
+  $("#covText").parentElement.parentElement.style.display = cov == null ? "none" : "";
+
+  const cl = snap.nodes.filter(n => n.type === "host" && (n.org === "Anthropic" || n.grant?.grant === "claude" || /anthropic/i.test(n.netOrg || "")));
+  $("#claudeSec").hidden = !cl.length;
+  if (cl.length) {
+    const ls = snap.links.filter(l => cl.some(n => n.id === l.target));
+    const rank = { poor: 3, fair: 2, good: 1 }, worst = ls.reduce((a, l) => (rank[l.health] || 0) > (rank[a?.health] || 0) ? l : a, null);
+    const word = !worst ? "Connected · idle" : worst.health === "poor" ? "Struggling" : worst.health === "fair" ? "Working, a bit slow" : "Healthy";
+    const rtts = ls.map(l => l.rtt).filter(v => v != null), mins = ls.map(l => l.minRtt).filter(v => v != null), procs = [...new Set(ls.map(l => l.source.slice(2)))];
+    $("#claudeCard").cachedHTML = `<div class="pad"><div class="title-row"><span class="hdot ${worst?.health || "good"}"></span>${word}</div>
+      ${worst && worst.health !== "good" ? `<div class="foot" style="margin-top:2px">${esc(worst.healthWhy)}</div>` : ""}</div>
+      <div class="row" title="Smoothed round trip of connections that moved data in the last few seconds"><span>Round trip now</span><span>${rtts.length ? fmtMs(d3.min(rtts)) + (rtts.length > 1 && d3.max(rtts) - d3.min(rtts) > 2 ? " – " + fmtMs(d3.max(rtts)) : "") : "idle"}</span></div>
+      <div class="row" title="The fastest round trip these connections have ever had — the path's baseline"><span>Best seen</span><span>${mins.length ? fmtMs(d3.min(mins)) : "–"}</span></div>
+      <div class="row"><span>Apps</span><span>${esc(procs.join(", "))}</span></div>
+      <div class="row"><span>Servers in use</span><span>${cl.length}</span></div>`;
+  }
+  const net = snap.ifaces.find(i => i.default) || snap.ifaces[0];
+  if (!net) $("#netCard").cachedHTML = `<div class="pad"><div class="title-row"><span class="hdot poor"></span>No network connection</div></div>`;
+  else {
+    const sig = net.wifi?.signal;
+    const kind = net.kind === "wifi" ? "Wi-Fi" : net.kind === "vpn" ? "VPN" : "Wired";
+    $("#netCard").cachedHTML = `<div class="pad"><div class="title-row">${icon(net.kind === "wifi" ? "wifi" : "bolt")}${kind}<span class="faint small" style="font-weight:400">${esc(net.name)}</span></div></div>` +
+      (net.wifi && sig == null ? `<div class="row"><span>Signal</span><span class="faint">not reported by the driver</span></div>` : "") + (sig != null ? `<div class="row"><span>Signal</span><span>${bars(sig)}${sig > -67 ? "Strong" : sig > -75 ? "OK" : "Weak"} · ${sig} dBm</span></div>` : "") +
+      `<div class="row"><span>Router</span><span>${esc(net.gateway || "–")}</span></div>` +
+      `<div class="row"><span>DNS</span><span title="${esc((snap.dns || []).join(", "))}">${(snap.dns || []).every(d => d.startsWith("127.") || d === "::1") && (snap.dns || []).length ? "This computer (local resolver)" : esc((snap.dns || []).join(", ") || "–")}</span></div>` +
+      (() => { const d = net.rxDrop + net.txDrop, pk = (net.rxPk || 0) + (net.txPk || 0), share = pk ? d / pk : null;
+        return `<div class="row" title="Packets the network card discarded since it came up — usually frames for other devices or protocols the computer doesn't use, not lost data."><span>Dropped packets</span><span>${d.toLocaleString()}${share != null ? ` <span class="faint">· ${fmtPct(share)}${share < .01 ? ", normal" : ""}</span>` : ""}</span></div>`; })() +
+      `<div class="row"><span>Errors</span><span>${net.rxErr + net.txErr ? `<span style="color:var(--fair)">${net.rxErr + net.txErr}</span>` : "None"}</span></div>`;
+  }
+  const pol = snap.policy || {}, refused = snap.nodes.filter(n => n.refused), blocks = snap.control.blocks || [];
+  let fh = "";
+  if (pol.provider === "machine") {
+    fh = `<div class="pad"><div class="title-row"><span class="hdot ${pol.lockdown ? "good" : "fair"}"></span>${pol.lockdown ? "Blocking by default" : "Open — lockdown off"}</div>
+      <div class="small muted" style="margin-top:2px">${pol.lockdown ? "Only these rules let traffic out:" : ""}</div></div>` +
+      (pol.grants || []).map(g => `<details class="rule"><summary class="name">${esc(g.name)} <span class="faint" style="font-weight:400">· ${plural(g.domains.length, "name")}</span>${g.kind === "base" ? `<span class="tag">always on</span>` : ""}${g.until ? `<span class="tag" title="${esc(g.until)}">until ${esc(new Date(g.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}</span>` : ""}</summary>
+        <div class="dom">${esc(g.domains.join(", "))}</div>${g.reason ? `<div class="dom faint">${esc(g.reason)}</div>` : ""}</details>`).join("") +
+      `<div class="row" style="border-top:1px solid var(--sep)"><span>Blocked attempts · 10 min</span><span>${pol.dropLog ? d3.sum(refused, n => n.refused) : `<button class="linkbtn" data-admin title="Turn on admin mode to read the firewall log">Admin only</button>`}</span></div>`;
+  } else fh = `<div class="pad small muted">No firewall rules found on this computer. Blocks you make here last until Process Traffic quits.</div>`;
+  const changes = (snap.events || []).filter(e => e.kind === "control").slice(-4).reverse();
+  if (changes.length) fh += `<div class="rule"><div class="name">Recent changes</div>` + changes.map(e => `<div class="dom">${esc(e.text)} <span class="faint">· ${clock(e.t)}${e.actor ? " · via " + esc(e.actor) : ""}</span></div>`).join("") + `</div>`;
+  if (blocks.length) fh += `<div class="rule"><div class="name">Blocked by you <span class="tag">until you unblock or quit</span></div>` + blocks.map(b => `<div class="row" style="padding:0;min-height:24px;gap:6px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis" title="${b.kind === "app" ? "App, including after it restarts" : "Address " + esc(b.ip) + ", all apps"}">${b.kind === "app" ? "App: " : ""}${esc(b.label)} <span class="faint">· ${clock(b.since)}</span></span><span><button class="linkbtn" data-unblock="${esc(b.id)}">Unblock</button></span></div>`).join("") + `</div>`;
+  $("#fwCard").cachedHTML = fh;
+  const ev = (snap.events || []).slice(-30).reverse(), ico = { new: "plus", blocked: "block", health: "warn", control: "shield" };
+  $("#feed").cachedHTML = ev.length ? ev.map(e => `<li ${e.host || e.proc ? `data-id="${esc(e.host || e.proc)}"` : ""}><span class="ic ${e.kind}">${icon(ico[e.kind] || "dot")}</span><span>${esc(e.text)}<div class="t">${clockS(e.t)}${e.actor ? " · via " + esc(e.actor) : ""}</div></span></li>`).join("")
+    : `<li class="empty" style="display:block">New connections, refusals and changes appear here as they happen.</li>`;
+}
+$("#feed").addEventListener("click", e => { const li = e.target.closest("li[data-id]"); if (li) select(li.dataset.id); });
+document.addEventListener("click", e => {
+  const u = e.target.closest("[data-unblock]"); if (u) act({ op: "unblock", block: u.dataset.unblock });
+  if (e.target.closest("[data-admin]")) toggleAdmin();
+  if (e.target.closest("[data-how]")) howSheet();
+});
+
+// ---------- toolbar ----------
+function renderStatus() {
+  const cli = (snap.observer?.clients || []).some(c => c.label === "a command-line client");
+  if (cli) lastCli = Date.now();
+  $("#demoBanner").cachedHTML = snap.demo ? "Showing demo data — not this computer" : "";
+  document.body.classList.toggle("demo", !!snap.demo);
+  const ch = (snap.events || []).filter(e => e.kind === "control" && e.actor && Date.now() / 1000 - e.t < 120).pop();
+  $("#chips").cachedHTML = (ch ? `<span class="chip cli" title="${esc(ch.text)} — ${clockS(ch.t)}"><span class="cd"></span>Via ${esc(ch.actor)}: ${esc(midTrunc(ch.text, 34))}</span>` : "") +
+    (Date.now() - lastCli < 60000 ? `<span class="chip cli" title="Claude or a terminal is reading this view through ptctl. Anything it changes is listed in Activity as “via command line”."><span class="cd"></span>Command line connected</span>` : "");
+  const s = $("#scopeBtn");
+  s.className = "chip" + (snap.root ? " admin" : "");
+  s.cachedHTML = `<span class="cd"></span>` + (snap.root ? "All processes" : "Your processes only") + icon("chev");
+  s.title = snap.root ? "Admin mode: every process, the firewall log and the controls." : "Only your own processes are visible and the controls are off. Click to turn on admin mode (asks for your password).";
+}
+function toggleAdmin() {
+  if (snap?.demo) return toast("Demo data already shows what admin mode sees");
+  if (native) { native.postMessage("admin"); return; }
+  openSheet(`<h2>Admin mode</h2><p>In a browser, start the collector as root to see every process, read the firewall log and use the controls:</p>
+    <pre style="background:var(--fill);padding:8px;border-radius:6px">sudo python3 collector.py</pre><div class="rowbtns"><button class="btn primary" data-cancel>OK</button></div>`);
+}
+$("#scopeBtn").onclick = toggleAdmin;
+setInterval(() => {
+  const el = $("#pauseBtn"); el.classList.toggle("paused", paused);
+  const age = (Date.now() - lastPoll) / 1000, stale = snap && age > 3 * snap.pollEvery;
+  el.classList.toggle("err", failures > 1 || stale);
+  $("#liveText").textContent = failures > 1 ? "Collector not responding" : paused ? "Paused" : stale ? `Stale · ${Math.round(age)} s` : snap ? "Live" : "Connecting…";
+  $("#liveDot").style.background = paused ? "var(--text3)" : failures > 1 || stale ? "var(--poor)" : "var(--good)";
+}, 1000);
+
+// ---------- inspector ----------
+function select(id) {
+  selected = id || null; explainCache = null; menuOpen = false;
+  $("#inspector").classList.toggle("open", !!selected);
+  if (view === "map") {
+    gNodes.selectAll("g.node").classed("sel", d => d.id === selected); applyFocus();
+    const n = byId.get(selected);
+    if (n && false) {
+      const nb = [n, ...links.filter(l => (l.source.id ?? l.source) === n.id || (l.target.id ?? l.target) === n.id).map(l => (l.source.id ?? l.source) === n.id ? l.target : l.source)].filter(x => x && x.x != null);
+      const W = innerWidth - ($("#sidebar").offsetWidth || 0) - 344, H = mainH - 60, pad = 70;
+      const [x0, x1, y0, y1] = [d3.min(nb, d => d.x) - pad - 60, d3.max(nb, d => d.x) + pad + 60, d3.min(nb, d => d.y) - pad, d3.max(nb, d => d.y) + pad];
+      const k = Math.min(1.5, Math.max(.4, Math.min(W / (x1 - x0), H / (y1 - y0))));
+      setTimeout(() => svg.transition().duration(260).ease(d3.easeCubicOut).call(zoom.transform, d3.zoomIdentity.translate(0, -10).scale(k).translate(-(x0 + x1) / 2, -(y0 + y1) / 2)), 210);
+    }
+    writeLabels(gNodes.selectAll("g.node"));
+    placeLabels();
+    if (n) setTimeout(() => {   // keep the zoom; pan only if the selection ended up outside the visible canvas
+      resize();
+      // the inspector floats over the right of the map: keep the selection in the open area to its left
+      const t = d3.zoomTransform(svg.node()), sx = t.applyX(n.x), sy = t.applyY(n.y), right = mainW / 2 - 372, left = -mainW / 2 + 290, hh = mainH / 2 - 70;
+      if (sx > right - 40 || sx < left + 40 || Math.abs(sy) > hh) {
+        const cx = (left + right) / 2;   // centre of the free area, in screen units from the canvas centre
+        svg.transition().duration(260).call(zoom.translateTo, n.x - cx / t.k, n.y);
+      }
+    }, 330);
+  } else renderList();
+  renderInspector();
+  if (selected) fetchExplain();
+}
+let explainPending = false, explainTick = 0;
+async function fetchExplain() {
+  const id = selected;
+  try { const r = await fetch(API("explain?id=" + encodeURIComponent(id))); const j = await r.json(); if (id === selected) { explainCache = j; renderInspector(); } } catch {}
+  explainPending = false;
+}
+const SECTION = { what: "What it is", decision: "Firewall decision", who: "Who", where: "Location", health: "Connection health", amount: "Amount and timing" };
+const kindHelp = "Exact: read directly from the system. Derived: calculated from exact values. Inferred: a best match that can be wrong.";
+let menuOpen = false, rawOpen = false, watchReconnect = null, showSources = false;
+function renderInspector() {
+  const el = $("#insInner");
+  if (!selected || !snap) { el.innerHTML = ""; return; }
+  const n = snap.nodes.find(x => x.id === selected);
+  if (!n && selected === "fw") {
+    const r = snap.nodes.filter(x => x.refusedOnly), tot = d3.sum(r, x => x.refused);
+    el.cachedHTML = `<div class="ins-head"><div class="ins-icon" style="background:var(--block-fill);color:var(--block)">?</div><div style="min-width:0"><div class="ins-title">Unknown app</div>
+      <div class="ins-sub">${plural(r.length, "host")} · at least ${plural(tot, "blocked attempt")}</div></div><button class="tbtn ins-close" data-close aria-label="Close">${icon("x")}</button></div>
+      <div class="group">${r.map(x => `<div class="row" data-sel="${esc(x.id)}" style="cursor:default"><span style="font-family:ui-monospace,monospace;color:var(--text)">${esc(x.dns ? leftTrunc(x.dns, 30) : x.ip)}</span><span style="color:var(--block);font-weight:600">×${x.refused}</span></div>`).join("")}</div>
+      <p class="small muted" style="margin:10px 2px">Something on this computer tried to reach these and the firewall blocked it. No connection was made. The firewall log can't say which app.</p>
+      <div class="actions"><button class="btn" data-fwview style="flex:1;justify-content:center">Review in Firewall…</button></div>`;
+    return;
+  }
+  if (!n) { el.innerHTML = `<div class="ins-head"><div class="ins-title">Closed</div><button class="tbtn ins-close" data-close aria-label="Close">${icon("x")}</button></div><p class="muted">This connection has closed since you selected it.</p>`; return; }
+  const isHost = n.type === "host", ls = snap.links.filter(l => l.source === n.id || l.target === n.id);
+  const avatar = isHost ? `<div class="ins-icon host">${icon(n.kind === "lan" ? "house" : "globe")}</div>`
+    : n.icon ? `<div class="ins-icon img"><img alt="" src="${API("icon?p=" + encodeURIComponent(n.label))}"></div>` : `<div class="ins-icon" style="background:${pcolor(n.label)}">${esc(n.label[0].toUpperCase())}</div>`;
+  const sub = isHost ? [!n.dns && n.kind === "internet" ? "No name seen" : "", n.service ? n.org + " · " + n.service : n.netOrg ? "Owned by " + n.netOrg + (n.hosting === "cloud" ? " (cloud)" : n.hosting === "cdn" ? " (CDN)" : "") : "", n.kind === "lan" ? "Local network" : n.cc && !n.hosting ? flag(n.cc) + " " + countryName(n.cc) : ""].filter(Boolean).join(" · ")
+    : [n.desc, n.app && n.app.toLowerCase() !== n.label.toLowerCase() && "app " + n.app].filter(Boolean).join(" · ") || "Process";
+  const v = n.verdict, vIcon = { ok: "shieldok", notice: "info", fair: "gauge", poor: "gauge", warn: "warn", refused: "block" };
+  const verdict = v?.status?.length ? `<div class="group status-rows">${v.status.map(x => `<div class="srow ${x.tone}">${icon(x.text.startsWith("Likely unencrypted") ? "lockopen" : vIcon[x.tone] || "info")}<div>${x.head ? `<div style="font-weight:600">${esc(x.head)}</div>` : ""}${x.text ? `<div class="${x.head ? "muted small" : ""}">${esc(x.text)}</div>` : ""}</div></div>`).join("")}</div>` : "";
+  const hist = nodeHist.get(n.id) || [];
+  const rows = [];
+  if (!n.refusedOnly) {
+    const udpOnlyN = (n.protos || []).length === 1 && n.protos[0] === "udp";
+    rows.push([`Since ${clock(snap.started)}`, udpOnlyN ? `<span class="faint">not measured (UDP/QUIC)</span>` : `↑ ${fmtBytes(isHost ? n.accIn : n.accOut)}  ↓ ${fmtBytes(isHost ? n.accOut : n.accIn)}`, "Moved while Process Traffic was watching. This total never goes down, even when connections close."]);
+    rows.push(["Now", udpOnlyN ? `<span class="faint">—</span>` : `↑ ${fmtRate(isHost ? n.rateIn : n.rateOut)}  ↓ ${fmtRate(isHost ? n.rateOut : n.rateIn)}`]);
+    if (isHost) {
+      const hl = ls.find(l => l.health === n.health && l.health) || ls.find(l => l.health) || ls[0];
+      rows.push(["Health", n.health ? `<span class="hdot ${n.health}"></span> ${HW[n.health]}` : `<span class="faint">${esc((hl?.healthWhy || "not rated").split(" (")[0].replace(/ — .*/, ""))}</span>`, hl?.healthWhy]);
+      if (n.rtt != null || hl?.minRtt) rows.push(["Round trip", (n.rtt != null ? "now " + fmtMs(n.rtt) : "idle") + (hl?.minRtt ? ` <span class="faint">· best ${fmtMs(hl.minRtt)}</span>` : ""), "Smoothed round trip of active connections; best = the fastest this connection has ever been"]);
+      const rb = ls.find(l => l.retrBasis);
+      if (rb) rows.push(["Uploads resent", rb.retrBasis === "now" ? fmtPct(rb.retr) + ` <span class="faint">· last 10 s</span>` : `— <span class="faint">· too little uploaded lately</span>`, "Only this computer's resends are visible; loss on downloads happens at the server"]);
+    } else rows.push(["Connections", `${plural(n.conns, "open connection")} to ${plural(ls.filter(l => l.source === n.id).length, "host")}`]);
+  } else {
+    rows.push(["Blocked attempts", `${plural(n.refused, "time")} in the last 10 min`]);
+    rows.push(["Last attempt", `${clockS(n.lastRefused)} <span class="faint">· ${ago(n.lastRefused)}</span>`]);
+  }
+  if (!n.refusedOnly) rows.push(["First seen", n.preexisting ? `<span class="faint">before monitoring started</span>` : `<span title="${esc(clockS(n.firstSeen))}">${clock(n.firstSeen)}</span>` + (n.isNew ? ` <span class="tag">New</span>` : "")]);
+  const metrics = `<div class="group">${rows.map(([k, v2, t]) => `<div class="row" ${t ? `title="${esc(t)}"` : ""}><span>${k}</span><span>${v2}</span></div>`).join("")}
+    ${n.refusedOnly ? "" : `<div class="chart-cap"><span>Speed (↑+↓), last ${Math.max(1, Math.round(hist.length * snap.pollEvery / 60))} min</span><span>peak ${fmtRate(d3.max(hist) || 0)}</span></div><div class="chart-wrap"><svg class="spark" id="insSpark" preserveAspectRatio="none" style="height:44px;margin:0"></svg></div>`}</div>`;
+
+  const can = snap.control.available, pol = snap.policy || {};
+  const dis = can ? "" : "disabled";
+  let acts = "";
+  const tcpN = ls.reduce((a, l) => a + ((l.protos || []).includes("tcp") ? l.conns - (l.connecting || 0) : 0), 0);
+  if (isHost && !n.refusedOnly && tcpN) acts += `<button class="btn" data-act="cut" ${dis} title="Close the open TCP connections now. The app may reconnect.">${icon("unplug")}Disconnect ${plural(tcpN, "connection")}</button>`;
+  if (isHost && n.blockedHere) acts += `<button class="btn" data-act="unblock-host" ${dis}>Unblock</button>`;
+  else if (isHost && !n.refusedOnly) acts += `<button class="btn" data-act="block-host" ${dis}>${icon("block")}Block…</button>`;
+  if (isHost && pol.provider === "machine" && n.refusedOnly && n.dns) acts += `<button class="btn" data-act="allow" ${dis} title="Add a firewall rule for this name">Allow…</button>`;
+  if (!isHost && !n.fw) { if (tcpN) acts += `<button class="btn" data-act="cut" ${dis}>${icon("unplug")}Disconnect ${plural(tcpN, "connection")}</button>`; if (!n.blockedHere) acts += `<button class="btn" data-act="block-app" ${dis}>${icon("block")}Block app…</button>`; }
+  acts += `<button class="btn more" data-act="menu" aria-label="More actions">${icon("dots")}</button>
+    <div class="menu ${menuOpen ? "open" : ""}" id="insMenu"><button data-act="copy">${icon("copy")}Copy explanation for Claude</button><button data-act="sources">${icon("info")}${showSources ? "Hide sources" : "Show where each fact comes from"}</button>
+    ${isHost && n.grant && pol.provider === "machine" && n.grant.grant !== "claude" ? `<button data-act="revoke" ${dis}>${icon("block")}Remove rule “${esc(n.grant.grant)}”…</button>` : ""}
+    <button data-act="raw">${icon("info")}Show raw measurements</button></div>`;
+
+  const ex = explainCache && explainCache.id === n.id ? explainCache : null;
+  let facts = "";
+  if (ex?.facts) {
+    const kindWord = { exact: "Exact", derived: "Derived", inferred: "Inferred", partial: "Partial" };
+    const factHtml = f => `<div class="fact" title="${esc((kindWord[f.kind] || f.kind) + " — source: " + f.source)}"><div class="k">${esc(f.label || "")}</div><div class="v">${esc(untoken(f.text)).replace(/([a-z0-9])-([a-z0-9])/gi, "$1\u2011$2")}${f.kind !== "exact" ? ` <span class="kind ${f.kind}">${kindWord[f.kind] || f.kind}</span>` : ""}</div>${showSources ? `<div class="src">${esc(f.source)}</div>` : ""}</div>`;
+    for (const s of ["what", "decision", "who", "where", "health", "amount"]) {
+      const f = ex.facts.filter(f => f.section === s); if (!f.length) continue;
+      facts += `<div class="ghead">${SECTION[s]}</div><div class="group">` + f.map(factHtml).join("") + `</div>`;
+    }
+
+    const tech = ex.facts.filter(f => f.section === "technical");
+    if (tech.length) facts += `<details class="tech"><summary>Technical details</summary><div class="group">${tech.map(factHtml).join("")}</div></details>`;
+  } else facts = `<div class="ghead">Evidence</div><div class="group"><div class="fact faint">Gathering…</div></div>`;
+
+  const html = `<div class="ins-head">${avatar}<div style="min-width:0"><div class="ins-title" title="${esc(isHost ? hostName(n) : n.label)}">${isHost ? (n.dns ? esc(n.dns).replace(/-/g, "\u2011").replace(/\./g, ".<wbr>") : n.kind === "internet" ? esc(n.ip) : esc(hostName(n))) : esc(n.label)}</div><div class="ins-sub" title="${esc(sub)}">${esc(sub)}</div><button class="linkbtn small" data-act="copy" style="margin-top:3px">Ask Claude about this</button></div>
+      <button class="tbtn ins-close" data-close title="Close (Esc)" aria-label="Close">${icon("x")}</button></div>
+    ${verdict}${metrics}
+    <div class="actions">${acts}</div>
+    ${n.refusedOnly ? `<div class="note">${icon("info")}<span>It stays blocked unless you allow it. Allow only if an app you rely on needs it — the firewall can't tell which app asked.</span></div>` : ""}
+    ${can ? "" : `<div class="note">${icon("shield")}<span>Disconnecting and blocking need admin mode. <button class="linkbtn" data-admin>Turn on…</button></span></div>`}
+    ${facts}
+    ${ex?.facts ? `<div class="note">${icon("copy")}<span><button class="linkbtn" data-act="copy">Copy this explanation</button> to ask Claude about it — or Claude can run <code>ptctl explain ${esc(isHost ? hostName(n) : n.label)}</code> itself.</span></div>` : ""}
+    <details class="raw" id="rawBox" ${rawOpen ? "open" : ""}><summary>Raw measurements</summary><pre>${rawOpen ? esc(JSON.stringify({ node: n, links: ls }, null, 1)) : ""}</pre></details>`;
+  if (_htmlCache.get(el) !== html) { setHTML(el, html); $("#rawBox").ontoggle = e => { rawOpen = e.target.open; if (rawOpen) { _htmlCache.delete(el); renderInspector(); } }; }
+  if (!n.refusedOnly) drawMini($("#insSpark"), hist);
+}
+function drawMini(el, h) {
+  if (!el) return; const W = 290, H = 44, s = d3.select(el).attr("viewBox", `0 0 ${W} ${H}`);
+  if (s.select("defs").empty()) s.append("defs").html(`<linearGradient id="sg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient>`);
+  const x = d3.scaleLinear().domain([0, Math.max(1, h.length - 1)]).range([0, W]), y = d3.scaleLinear().domain([0, d3.max(h) || 1]).range([H - 1, 3]);
+  s.selectAll("path.a").data([h]).join("path").attr("class", "a").attr("d", d3.area().x((d, i) => x(i)).y0(H).y1(d => y(d)).curve(d3.curveMonotoneX)).attr("fill", "url(#sg)");
+  s.selectAll("path.l").data([h]).join("path").attr("class", "l").attr("d", d3.line().x((d, i) => x(i)).y(d => y(d)).curve(d3.curveMonotoneX)).attr("fill", "none").attr("stroke", "var(--accent)").attr("stroke-width", 1.5);
+  s.selectAll("line").data([0]).join("line").attr("x1", 0).attr("x2", W).attr("y1", H - .5).attr("y2", H - .5).attr("stroke", "var(--sep-strong)");
+}
+$("#insInner").addEventListener("click", e => {
+  if (e.target.closest("[data-close]")) return select(null);
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const n = snap.nodes.find(x => x.id === selected); if (!n) return;
+  const a = b.dataset.act, name = n.type === "host" ? hostName(n) : n.label;
+  const tcp = snap.links.filter(l => l.source === n.id || l.target === n.id).reduce((s, l) => s + ((l.protos || []).includes("tcp") ? l.conns : 0), 0);
+  if (a === "menu") { menuOpen = !menuOpen; $("#insMenu").classList.toggle("open", menuOpen); e.stopPropagation(); return; }
+  menuOpen = false; $("#insMenu")?.classList.remove("open");
+  if (a === "copy") return copyExplanation(n);
+  if (a === "sources") { showSources = !showSources; _htmlCache.delete($("#insInner")); return renderInspector(); }
+  if (a === "raw") { const r = $("#rawBox"); r.open = true; r.scrollIntoView({ behavior: "smooth" }); return; }
+  const outOfRules = n.type === "host" && snap.policy?.lockdown && !n.grant && n.kind === "internet";
+  if (a === "cut") return confirmSheet(`Disconnect ${name}?`, `<p>Resets ${plural(tcp, "open TCP connection")} now. UDP/QUIC traffic isn't affected.</p><p>${outOfRules ? "<b>This host isn't in your rules, so it won't be able to reconnect</b> — this works like a block." : "Apps usually reconnect within seconds — to keep it out, use Block."}</p>`, "Disconnect", () => { watchReconnect = { id: n.id, until: Date.now() + 8000 }; act({ op: "cut", id: n.id }); });
+  if (a === "block-host") {
+    const others = (n.names || []).filter(x => x !== n.dns);
+    const shared = n.cdn || others.length ? `<div class="callout">${icon("warn")}<div><b>This address is shared.</b> ${n.cdn ? `It belongs to ${esc(n.netOrg)}, a content network that serves many sites. ` : ""}${others.length ? `It also served ${esc(others.slice(0, 4).join(", "))}. ` : ""}Those will be blocked too.</div></div>` : "";
+    const viaRule = n.grant && snap.policy?.provider === "machine" && n.grant.grant !== "claude" ? `<p class="small">To block by name instead, remove the rule “${esc(n.grant.grant)}” from the ⋯ menu.</p>` : "";
+    return confirmSheet(`Block ${name}?`, `<p>New connections from <b>all apps</b> to ${esc(n.ip)} will be refused, and ${plural(tcp, "open connection")} closed. Lasts until you unblock it or quit Process Traffic.</p>${shared}${viaRule}`, "Block", () => act({ op: "block-host", id: n.id }, { undo: { op: "unblock", block: "host:" + n.ip } }));
+  }
+  if (a === "unblock-host") return act({ op: "unblock", block: "host:" + n.ip });
+  if (a === "block-app") return confirmSheet(`Block ${n.app || name} from the network?`, `<p>Processes affected now: ${esc((n.pids || []).join(", "))}${n.exe ? " (" + esc(n.exe) + ")" : ""}.</p><p>All of ${esc(n.app || name)}'s processes lose network access now, and again whenever it restarts (a new launch may get a few packets out in its first 2 seconds). Lasts until you unblock it or quit Process Traffic. Other apps aren't affected.</p>`, "Block app", () => act({ op: "block-app", id: n.id }, { undo: { op: "unblock", block: "app:" + (n.app || n.exe || n.label) } }));
+  if (a === "allow") return allowSheet(n);
+  if (a === "revoke") return confirmSheet(`Remove rule “${n.grant.grant}”?`, `<p>Everything it allows (${esc(snap.policy.grants.find(g => g.name === n.grant.grant)?.domains.join(", ") || "")}) will be blocked again. Recorded in the machine ledger.</p>`, "Remove rule", () => act({ op: "machine-revoke", name: n.grant.grant }));
+});
+document.addEventListener("click", e => { if (menuOpen && !e.target.closest("#insMenu") && !e.target.closest("[data-act=menu]")) { menuOpen = false; $("#insMenu")?.classList.remove("open"); } });
+function copyExplanation(n) {
+  const ex = explainCache;
+  const lines = [`${n.type === "host" ? "Host" : "App"}: ${n.type === "host" ? hostName(n) + " (" + n.ip + ")" : n.label} — measured ${new Date(snap.time * 1000).toLocaleString()} by Process Traffic ${snap.version}${snap.demo ? " (DEMO DATA)" : ""}`];
+  if (n.verdict) lines.push("Summary: " + n.verdict.text);
+  (ex?.facts || []).forEach(f => lines.push(`- ${f.text}  [${f.kind}; source: ${f.source}]`));
+  const txt = lines.join("\n");
+  (navigator.clipboard?.writeText(txt) || Promise.reject()).then(() => toast("Copied — paste it into a chat with Claude"), () => {
+    const t = document.createElement("textarea"); t.value = txt; document.body.append(t); t.select(); document.execCommand("copy"); t.remove(); toast("Copied — paste it into a chat with Claude");
+  });
+}
+
+// ---------- actions ----------
+let lastAct = 0;
+async function act(body, opts = {}) {
+  lastAct = Date.now();
+  try {
+    const r = await fetch(API("action"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (j.needsConfirm) return confirmSheet("This is your connection to Claude", `<p>${esc(j.error)}</p>`, "Do it anyway", () => act({ ...body, force: true }, opts));
+    if (j.error) return toast("Couldn't do that: " + j.error);
+    if (j.ok === false) return toast("Failed: " + (j.out || "").split("\n").pop());
+    const msg = j.blocked ? "Blocked" + (j.cut ? ` · ${plural(j.cut, "connection")} closed` : "") : j.unblocked ? "Unblocked" : j.cut != null ? `${plural(j.cut, "connection")} closed — the app may reconnect` : "Done";
+    toast(msg, opts.undo ? ["Undo", () => act(opts.undo)] : null);
+    poll(true);
+  } catch { toast("Couldn't reach the collector"); }
+}
+const scrim = $("#scrim"), sheet = $("#sheet");
+function openSheet(html, onOk) {
+  sheet.innerHTML = html; scrim.classList.add("open");
+  (sheet.querySelector("input,textarea") || sheet.querySelector("[data-cancel]"))?.focus();
+  sheet.onclick = e => { if (e.target.closest("[data-cancel]")) closeSheet(); if (e.target.closest("[data-ok]") && onOk) { if (onOk() !== false) closeSheet(); } };
+}
+function closeSheet() { scrim.classList.remove("open"); sheet.innerHTML = ""; }
+scrim.addEventListener("click", e => { if (e.target === scrim) closeSheet(); });
+function confirmSheet(title, html, okText, fn) {
+  openSheet(`<h2>${esc(title)}</h2>${html}<div class="rowbtns"><button class="btn" data-cancel>Cancel</button><button class="btn destructive" data-ok>${esc(okText)}</button></div>`, fn);
+}
+function allowSheet(n) {
+  const parts = n.dns.split(".");
+  const name = (n.org || parts.slice(-2, -1)[0] || "site").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 30);
+  openSheet(`<h2>Allow ${esc(n.dns)}?</h2><p>Adds a firewall rule so <b>any app</b> on this computer can reach this name (and names under it) — the firewall can't tell which app asked. The rule is written to the machine ledger with your reason and ends on its own.</p>
+    ${n.service ? `<div class="callout">${icon("info")}<div>${esc(n.org)} · ${esc(n.service)}${advice(n) ? ". " + esc(advice(n)) : ""}</div></div>` : ""}
+    <label for="aDom">Name to allow</label><input id="aDom" value="${esc(n.dns)}" spellcheck="false">
+    <label for="aName">Rule name</label><input id="aName" value="${esc(name)}" spellcheck="false">
+    <label for="aFor">For</label><select id="aFor"><option value="30m">30 minutes</option><option value="1h" selected>1 hour</option><option value="4h">4 hours</option><option value="12h">12 hours</option></select>
+    <label for="aWhy">Reason</label><textarea id="aWhy" rows="2" placeholder="What is this for? (required)"></textarea>
+    <div class="rowbtns"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-ok>Allow</button></div>`, () => {
+    const why = $("#aWhy").value.trim(); if (!why) { $("#aWhy").focus(); return false; }
+    act({ op: "machine-allow", name: $("#aName").value.trim(), domain: $("#aDom").value.trim(), for: $("#aFor").value, reason: why });
+  });
+}
+function advice(n) { return (n.verdict?.status || []).find(x => x.tone === "notice")?.text || ""; }
+function howSheet() {
+  const notes = snap?.coverageNotes || [];
+  openSheet(`<h2>How it's measured</h2><p>Everything here is read from this computer — the kernel's connection table, the network interface, and the firewall's rules and log. Nothing is sent anywhere. Each fact is labelled
+    <span class="kind exact">Exact</span> read directly, <span class="kind derived">Derived</span> calculated from exact values, <span class="kind inferred">Inferred</span> a best match that can be wrong, or <span class="kind partial">Partial</span> only part is visible.</p>
+    <table class="cov">${notes.map(c => `<tr><td>${esc(c.what)}</td><td><span class="kind ${c.status}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span></td><td class="muted">${esc(c.what === "Connection health" ? "Judged on connections that moved data in the last 2 s, from the kernel's round trip and this computer's resends. Download-side loss isn't visible." : c.how)}</td></tr>`).join("")}</table>
+    <h3 style="font-size:12px;margin:14px 0 6px">Health thresholds</h3>
+    <table class="cov"><tr><td></td><td style="width:auto;font-weight:600">Round trip (vs the connection's own best)</td><td style="font-weight:600">Uploads resent</td></tr>
+    ${(snap?.healthTable || []).map(r => `<tr><td><span class="hdot ${r[0].toLowerCase()}"></span> ${r[0]}</td><td class="muted">${esc(r[1])}</td><td class="muted">${esc(r[2])}</td></tr>`).join("")}</table>
+    <p class="small faint" style="margin-top:12px">Sampled every ${snap?.pollEvery ?? 2} s · last sample took ${snap?.perf?.sampleMs ?? "–"} ms for ${snap?.perf?.sockets ?? "–"} sockets · IP data by <a href="https://db-ip.com" style="color:var(--accent)">DB-IP</a> (CC BY 4.0)</p>
+    <div class="rowbtns"><button class="btn primary" data-cancel>Done</button></div>`);
+}
+let toastT;
+function toast(t, action) {
+  const el = $("#toast"); el.innerHTML = `<span>${esc(t)}</span>` + (action ? `<button class="linkbtn">${esc(action[0])}</button>` : "");
+  if (action) el.querySelector("button").onclick = () => { el.classList.remove("show"); action[1](); };
+  el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), action ? 6000 : 3200);
+}
+
+// ---------- controls ----------
+function setView(v) {
+  view = v; document.body.classList.toggle("listview", v === "list"); document.body.classList.toggle("fwview", v === "fw");
+  ["map", "list", "fw"].forEach(x => document.body.classList.toggle("view-" + x, x === v));
+  setTimeout(resize, 0); d3.selectAll("#lensSeg button").attr("disabled", v === "list" ? true : null); d3.selectAll("#viewSeg button").classed("on", function () { return this.dataset.v === v; }); render(true); }
+document.body.classList.add("view-map");
+d3.selectAll("#viewSeg button").on("click", function () { setView(this.dataset.v); });
+function setLens(l) { lens = l; d3.selectAll("#lensSeg button").classed("on", function () { return this.dataset.l === lens; }); render("lens"); }
+d3.selectAll("#lensSeg button").on("click", function () { setLens(this.dataset.l); });
+$("#q").addEventListener("input", e => { query = e.target.value; render(true); });
+$("#pauseBtn").onclick = () => { paused = !paused; $("#pauseBtn").setAttribute("aria-label", paused ? "Resume updates" : "Pause updates"); $("#pauseBtn").title = paused ? "Resume (Space)" : "Pause updates (Space)"; };
+$("#howBtn").onclick = howSheet;
+$("#sideBtn").onclick = () => { if (view === "map") { document.body.classList.toggle("showside"); return; } if (innerWidth <= 1000) document.body.classList.toggle("showside"); else document.body.classList.toggle("nosidebar"); };
+$("#zIn").onclick = () => svg.transition().duration(220).call(zoom.scaleBy, 1.3);
+$("#zOut").onclick = () => svg.transition().duration(220).call(zoom.scaleBy, 1 / 1.3);
+$("#zFit").onclick = () => fit();
+let legendOpen = (() => { try { return localStorage.getItem("pt.legend") === "1"; } catch { return false; } })();
+function syncLegend() { $("#legend").classList.toggle("closed", !legendOpen); $("#legendBtn").setAttribute("aria-expanded", legendOpen); $("#legendBtn").classList.toggle("on", legendOpen); }
+document.addEventListener("mousedown", e => { if (legendOpen && !e.target.closest("#legend,#legendBtn")) { legendOpen = false; syncLegend(); } });
+$("#legendBtn").onclick = () => { legendOpen = !legendOpen; try { localStorage.setItem("pt.legend", legendOpen ? "1" : "0"); } catch {} syncLegend(); };
+syncLegend();
+addEventListener("keydown", e => {
+  if (e.target.matches("input,textarea,select")) { if (e.key === "Escape") e.target.blur(); return; }
+  if (e.key === "Escape") { if (scrim.classList.contains("open")) closeSheet(); else select(null); }
+  else if (e.key === " ") { e.preventDefault(); $("#pauseBtn").click(); }
+  else if (e.key === "/" || (e.key === "f" && (e.ctrlKey || e.metaKey))) { e.preventDefault(); $("#q").focus(); }
+  else if (e.key === "1") setView("map"); else if (e.key === "2") setView("list"); else if (e.key === "3") setView("fw");
+});
+
+// ---------- performance instrumentation (read by `networkgrafh.py --bench`) ----------
+const PERF = { renders: [], tick: [0, 0], frames: [], last: 0, phase: {}, labels: [0, 0] };
+(function frame(t) { if (PERF.last) { PERF.frames.push(t - PERF.last); if (PERF.frames.length > 1200) PERF.frames.shift(); } PERF.last = t; requestAnimationFrame(frame); })(0);
+sim.on("tick", () => { const t0 = performance.now(); ticked(); PERF.tick[0]++; PERF.tick[1] += performance.now() - t0; });
+const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(2) : null; };
+function perfSummary() {
+  const f = PERF.frames, r = PERF.renders;
+  const warm = r.slice(2);
+  return { coldRenderMs: r.length ? +r[0].toFixed(1) : null, warmRenderMs_avg: warm.length ? +d3.mean(warm).toFixed(2) : null, warmRenderMs_max: warm.length ? +d3.max(warm).toFixed(2) : null,
+    phaseMs: Object.fromEntries(Object.entries(PERF.phase).map(([k, v]) => [k, +(v / r.length).toFixed(2)])), placeLabelsMs_avg: PERF.labels[0] ? +(PERF.labels[1] / PERF.labels[0]).toFixed(2) : null,
+    renders: r.length, renderMs_avg: r.length ? +(d3.mean(r)).toFixed(2) : null, renderMs_p95: pct(r, .95), renderMs_max: r.length ? +d3.max(r).toFixed(2) : null,
+    frameMs_p50: pct(f, .5), frameMs_p95: pct(f, .95), longFrames_over50ms: f.filter(x => x > 50).length, frames: f.length,
+    fps: f.length ? +(1000 / d3.mean(f)).toFixed(1) : null, ticks: PERF.tick[0], tickMs_avg: PERF.tick[0] ? +(PERF.tick[1] / PERF.tick[0]).toFixed(3) : null,
+    domNodes: document.getElementsByTagName("*").length, svgNodes: document.querySelectorAll("#chart *").length, nodes: nodes.length, links: links.length };
+}
+
+// ---------- C · floating summary + key pills ----------
+function renderSummary() {
+  const t = snap.totals, h = snap.history.slice(-40), pol = snap.policy || {};
+  const cl = snap.nodes.filter(n => n.type === "host" && (n.org === "Anthropic" || n.grant?.grant === "claude" || /anthropic/i.test(n.netOrg || "")));
+  const cls = snap.links.filter(l => cl.some(n => n.id === l.target)), rank = { poor: 3, fair: 2, good: 1 };
+  const worst = cls.reduce((a, l) => (rank[l.health] || 0) > (rank[a] || 0) ? l.health : a, null);
+  const rtts = cls.map(l => l.rtt).filter(v => v != null);
+  const claude = !cl.length ? "not connected" : worst === "poor" ? "Struggling" : worst === "fair" ? "A bit slow" : rtts.length ? "Healthy · " + fmtMs(d3.min(rtts)) : "Connected · idle";
+  const W = 228, H = 24, max = d3.max(h, d => d[1] + d[2]) || 1;
+  const pts = h.map((d, i) => `${(i / Math.max(1, h.length - 1) * W).toFixed(1)},${(H - 2 - (d[1] + d[2]) / max * (H - 4)).toFixed(1)}`).join(" ");
+  const net = snap.ifaces.find(i => i.default) || snap.ifaces[0], sig = net?.wifi?.signal;
+  const blocked = d3.sum(snap.nodes.filter(n => n.refused), n => n.refused);
+  const [uo, ui] = [fmtRate(t.out).split(" "), fmtRate(t.in).split(" ")];
+  $("#summary").cachedHTML = `<div class="card float">
+      <span class="muted small">Traffic now</span>
+      <div class="tnum num"><span>↑ ${uo[0]}<small> ${uo[1]}</small></span><span>↓ ${ui[0]}<small> ${ui[1]}</small></span></div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,${H} ${pts} ${W},${H}" fill="var(--accent-fill)" stroke="none"/><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>
+      <span class="muted small">${t.coverage == null ? "Too little traffic to match to apps" : Math.round(t.coverage * 100) + "% matched to apps"}</span></div>
+    <div class="card float">
+      <div class="kvr"><span>Claude</span><span style="color:${worst === "poor" ? "var(--poor)" : worst === "fair" ? "var(--fair)" : "var(--good)"}">● ${esc(claude)}</span></div>
+      <div class="kvr"><span>Firewall</span><span>${pol.provider === "machine" ? (pol.lockdown ? "Block by default" : "Open") : "No rules found"}</span></div>
+      <div class="kvr"><span>Blocked · 10 min</span><span style="${blocked ? "color:var(--block);font-weight:600" : ""}">${pol.dropLog ? (blocked ? "at least " + blocked : "none") : `<button class="linkbtn" data-admin>admin only</button>`}</span></div>
+      <div class="kvr"><span>${net?.kind === "wifi" ? "Wi-Fi" : "Network"}</span><span>${sig != null ? (sig > -67 ? "Strong" : sig > -75 ? "OK" : "Weak") + " · " + sig + " dBm" : net ? "Connected" : "Offline"}</span></div>
+      <button class="linkbtn small more" data-showside>All details…</button></div>`;
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-fwview]")) { setView("fw"); return; } if (e.target.closest("[data-showside]")) document.body.classList.add("showside"); });
+function renderPills() {
+  const p = (sw, t) => `<span class="pill2 float">${sw}${t}</span>`, ln = c => `<span class="sw" style="border-color:${c}"></span>`, ds = c => `<span class="sw" style="border-top-style:dashed;border-top-width:2px;border-color:${c}"></span>`;
+  let h = lens === "health" ? p(ln("var(--good)"), "Healthy") + p(ln("var(--poor)"), "Losing packets / slow") : p(ln("var(--text3)"), lens === "activity" ? "Width = speed now" : "Width = data since start");
+  h += p(ds("var(--block)"), "Blocked") + p(`<span style="color:var(--fair);font-size:11px">http</span>`, "Not encrypted") + p(ds("var(--text3)"), "Idle / connecting");
+  h += `<button class="pill2 float" id="moreKey">${icon("info")}More</button>`;
+  $("#pills").cachedHTML = h;
+}
+document.addEventListener("click", e => { if (e.target.closest("#moreKey")) { legendOpen = !legendOpen; syncLegend(); } });
+
+// ---------- D · Firewall lanes ----------
+const laneDot = ["#c2552e", "#0e7490", "#475569", "#7c3aed", "#a16207", "#be185d", "#15803d"];
+function fwCard(n, l, opts = {}) {
+  const app = opts.app ?? (l ? (snap.nodes.find(x => x.id === l.source)?.label || "") : "");
+  const note = opts.note ?? (n.plaintext ? `<span style="color:var(--fair)">http</span>` : l?.health ? `<span style="color:${hColor(l.health)}">${HW[l.health]}</span>` : udpOnly(l || {}) ? `<span class="faint">not measured</span>` : /^idle/.test(l?.healthWhy || "") ? `<span class="faint">Idle</span>` : l?.connecting ? `<span class="faint">Connecting</span>` : "");
+  const tot = opts.total ?? (l && !udpOnly(l) ? fmtBytes((l.accOut || 0) + (l.accIn || 0)) : "");
+  return `<div class="fcard ${n.id === selected ? "sel" : ""}" role="button" tabindex="0" data-sel="${esc(n.id)}">
+    <span class="h">${esc(n.dns || (n.ip + (n.netOrg ? " · " + shortOrg(n.netOrg) : "")))}</span>
+    <div class="m">${app ? `<span class="app">${esc(app)}</span>` : ""}${note}<span class="tot">${esc(tot)}</span></div>
+    ${opts.actions || ""}</div>`;
+}
+function renderFirewall() {
+  const pol = snap.policy || {}, can = snap.control.available, nm = new Map(snap.nodes.map(n => [n.id, n]));
+  const hostLinks = snap.links.filter(l => nm.get(l.target)?.type === "host");
+  const refused = snap.nodes.filter(n => n.refusedOnly), blocks = snap.control.blocks || [];
+  const t = snap.totals, blockedN = d3.sum(refused, n => n.refused);
+  const allowedHosts = new Set(hostLinks.filter(l => nm.get(l.target).grant).map(l => l.target));
+  // expiring rules (within 2 h)
+  const soon = (pol.grants || []).filter(g => g.until && new Date(g.until) - Date.now() < 2 * 3600e3 && new Date(g.until) > Date.now());
+  const banners = soon.map(g => {
+    const apps = [...new Set(hostLinks.filter(l => nm.get(l.target).grant?.grant === g.name).map(l => nm.get(l.source).label))];
+    const canExtend = can && ["ad-hoc", "allow"].includes(g.kind);
+    return `<div class="fw-banner"><b>${esc(g.name)} expires at ${esc(new Date(g.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}</b>
+      <span>${apps.length ? esc(apps.join(", ")) + " will be blocked after that." : "Nothing is using it right now."}</span>
+      ${canExtend ? `<button class="btn" data-extend="${esc(g.name)}">Extend 1 hour</button>` : ""}</div>`;
+  }).join("");
+  const lanes = [];
+  // Blocked lane
+  const bcards = refused.map(n => fwCard(n, null, { app: (n.refusedApps || [])[0] || "Unknown app", note: `<span style="color:var(--block)">blocked ×${n.refused}</span>`, total: "",
+      actions: `<div class="acts"><button class="btn" data-askc="${esc(n.id)}">Ask Claude</button>${pol.provider === "machine" && n.dns ? `<button class="btn" data-allowh="${esc(n.id)}" ${can ? "" : "disabled"}>Allow…</button>` : ""}</div>` }))
+    .concat(blocks.map(b => `<div class="fcard"><span class="h">${esc(b.label)}</span><div class="m"><span class="app" title="Blocked by you until you unblock it or quit Process Traffic">blocked by you</span><button class="linkbtn tot" data-unblock="${esc(b.id)}">Unblock</button></div></div>`));
+  lanes.push({ name: "Blocked", sub: pol.provider === "machine" ? "default rule · last 10 min" : "blocked by you", dot: "var(--block)", alert: true, cards: bcards,
+    empty: pol.dropLog ? "Nothing blocked in the last 10 min." : "Turn on admin mode to see blocked attempts." });
+  // one lane per rule
+  (pol.grants || []).forEach((g, i) => {
+    const ls = hostLinks.filter(l => nm.get(l.target).grant?.grant === g.name).sort((a, b) => ((b.accOut || 0) + (b.accIn || 0)) - ((a.accOut || 0) + (a.accIn || 0)));
+    const when = g.kind === "base" ? "always on" : g.until ? "until " + new Date(g.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : g.kind === "mode" ? "mode" : "until reboot";
+    lanes.push({ name: g.name, sub: `${when} · ${plural(g.domains.length, "name")}`, why: g.reason, dot: laneDot[i % laneDot.length], cards: ls.map(l => fwCard(nm.get(l.target), l)),
+      empty: "No connections right now.", title: g.domains.join(", ") });
+  });
+  // everything else: local, and still open from before
+  const rest = hostLinks.filter(l => !allowedHosts.has(l.target)).filter(l => !nm.get(l.target).refusedOnly);
+  lanes.push({ name: pol.provider === "machine" ? "No rule needed" : "Connections", sub: pol.provider === "machine" ? "local · still open from before" : "no firewall rules on this computer", dot: "var(--text3)",
+    cards: rest.map(l => { const n = nm.get(l.target); return fwCard(n, l, n.kind === "lan" ? { note: `<span class="faint">LAN</span>` } : !n.grant && pol.lockdown ? { note: `<span class="faint">from before</span>` } : {}); }),
+    empty: "Nothing here." });
+  const local = snap.links.filter(l => nm.get(l.target)?.type === "process");
+  $("#fwview").cachedHTML = `<div class="fw-head">
+      <div style="display:flex;flex-direction:column;gap:2px;margin-right:auto"><h1>Firewall</h1>
+        <span class="sub">${pol.provider === "machine" ? (pol.lockdown ? "Blocking by default — only these rules let traffic out." : "Lockdown is off — everything is allowed.") : "No firewall rules found. Blocks you make here last until Process Traffic quits."}</span></div>
+      <div class="fw-stats"><div><span class="l">Allowed now</span><span class="v">${plural(allowedHosts.size, "host")}</span></div>
+        <div><span class="l">Blocked · 10 min</span><span class="v" style="${blockedN ? "color:var(--block)" : ""}">${pol.dropLog ? (blockedN ? "≥ " + blockedN + " attempts" : "none") : "admin only"}</span></div>
+        <div><span class="l">Traffic</span><span class="v">↑ ${fmtRate(t.out)} ↓ ${fmtRate(t.in)}</span></div></div>
+      ${pol.provider === "machine" ? `<button class="btn primary" data-newrule ${can ? "" : "disabled title=\"Needs admin mode\""} style="min-height:36px">New rule…</button>` : ""}
+    </div>${banners}
+    <div class="fw-lanes">${lanes.map(L => `<section class="lane ${L.alert ? "alert" : ""}" ${L.title ? `title="${esc(L.title)}"` : ""}>
+      <div class="lane-h"><div class="t"><span class="hdot" style="background:${L.dot}"></span><h2>${esc(L.name)}</h2><span class="n">${L.cards.length}</span></div>
+        <span class="s">${esc(L.sub)}</span>${L.why ? `<span class="why">${esc(L.why)}</span>` : ""}</div>
+      ${L.cards.join("") || `<div class="empty">${esc(L.empty)}</div>`}</section>`).join("")}</div>
+    ${local.length ? `<p class="small faint" style="padding:0 24px 20px">Plus ${plural(local.length, "connection")} between apps on this computer, which the firewall doesn't filter.</p>` : ""}`;
+}
+document.addEventListener("click", e => {
+  const c = e.target.closest("[data-sel]"); const ask = e.target.closest("[data-askc]"), al = e.target.closest("[data-allowh]"), ex = e.target.closest("[data-extend]"), nr = e.target.closest("[data-newrule]");
+  if (ask) { const n = snap.nodes.find(x => x.id === ask.dataset.askc); selected = n.id; fetch(API("explain?id=" + encodeURIComponent(n.id))).then(r => r.json()).then(j => { explainCache = j; copyExplanation(n); select(n.id); }); return; }
+  if (al) { const n = snap.nodes.find(x => x.id === al.dataset.allowh); if (n) allowSheet(n); return; }
+  if (ex) return act({ op: "machine-extend", name: ex.dataset.extend, minutes: 60 });
+  if (nr) return newRuleSheet();
+  if (c && !e.target.closest("button")) { select(c.dataset.sel); if (view === "fw") renderFirewall(); }
+});
+function newRuleSheet() {
+  openSheet(`<h2>New rule</h2><p>Lets <b>any app</b> on this computer reach these names and the names under them. It's written to the machine ledger with your reason and ends on its own.</p>
+    <label for="rName">Rule name</label><input id="rName" placeholder="e.g. docs" spellcheck="false">
+    <label for="rDoms">Names to allow</label><input id="rDoms" placeholder="example.com, docs.python.org" spellcheck="false">
+    <label for="rFor">For</label><select id="rFor"><option value="30m">30 minutes</option><option value="1h" selected>1 hour</option><option value="4h">4 hours</option><option value="12h">12 hours</option></select>
+    <label for="rWhy">Reason</label><textarea id="rWhy" rows="2" placeholder="What is this for? (required)"></textarea>
+    <div class="rowbtns"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-ok>Add rule</button></div>`, () => {
+    const name = $("#rName").value.trim().toLowerCase(), doms = $("#rDoms").value.split(/[\s,]+/).filter(Boolean), why = $("#rWhy").value.trim();
+    if (!name || !doms.length || !why) { (!name ? $("#rName") : !doms.length ? $("#rDoms") : $("#rWhy")).focus(); return false; }
+    act({ op: "machine-allow", name, domains: doms, for: $("#rFor").value, reason: why });
+  });
+}
+
+// ---------- polling ----------
+function render(restart) {
+  if (!snap) return;
+  const t0 = performance.now();
+  const ph = (name, fn) => { const a = performance.now(); fn(); PERF.phase[name] = (PERF.phase[name] || 0) + performance.now() - a; };
+  try {
+    ph("status", renderStatus); ph("sidebar", renderSidebar);
+    if (view === "map") { ph("map", () => renderMap(restart)); ph("summary", renderSummary); renderPills(); }
+    else if (view === "fw") ph("fw", renderFirewall); else ph("list", renderList);
+    if (selected && !explainPending) ph("inspector", renderInspector);
+  } finally { PERF.renders.push(performance.now() - t0); if (PERF.renders.length > 300) PERF.renders.shift(); }
+}
+let firstFit = true;
+async function poll(once) {
+  if (!paused || once) {
+    try {
+      const r = await fetch(API("flows"), { cache: "no-store" });
+      if (!r.ok) throw new Error(r.status);
+      const j = await r.json();
+      failures = 0; lastPoll = Date.now(); $("#err").style.display = "none";
+      if (!snap || j.seq !== snap.seq) {
+        snap = j;
+        for (const n of snap.nodes) { const h = nodeHist.get(n.id) || []; h.push((n.rateIn || 0) + (n.rateOut || 0)); if (h.length > 150) h.shift(); nodeHist.set(n.id, h); }
+        if (watchReconnect && Date.now() < watchReconnect.until && Date.now() - lastAct > 2500) {
+          const back = snap.links.filter(l => l.source === watchReconnect.id || l.target === watchReconnect.id).reduce((a, l) => a + ((l.protos || []).includes("tcp") ? l.conns : 0), 0);
+          if (back) { toast(`It reconnected (${plural(back, "connection")}) — use Block to keep it off`); watchReconnect = null; }
+        } else if (watchReconnect && Date.now() >= watchReconnect.until) { toast("Still disconnected"); watchReconnect = null; }
+        if (selected && ++explainTick % 3 === 0) { explainPending = true; fetchExplain(); }
+        render(true);
+        if (firstFit && view === "map") { firstFit = false; setTimeout(() => { fit(false); placeLabels(); }, 1400); }
+      }
+    } catch (err) {
+      failures++;
+      if (failures > 2) { $("#err").style.display = "grid"; $("#err").innerHTML = `<div><b>Can't reach the collector.</b><br><span class="small">Start it with <code>python3 collector.py</code> and open the address it prints.</span></div>`; }
+    }
+  }
+  if (!once) setTimeout(poll, snap ? Math.max(500, snap.pollEvery * 1000) : 800);
+}
+poll();
+window.__pt = { get snap() { return snap; }, select, setView, fit, perf: perfSummary, sheet: () => howSheet(), set lens(v) { setLens(v); }, toggleAdmin };
+</script>
+</body>
+</html>

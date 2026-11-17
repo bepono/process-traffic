@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.networkgrafh</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Process Traffic</name>
+  <summary>See and control what every app on your computer talks to</summary>
+  <description>
+    <p>Process Traffic shows a live map of which apps are talking to which internet hosts, how much data moves,
+      how healthy each connection is, and which firewall rule allowed it — or that the firewall blocked it.</p>
+    <ul>
+      <li>Every fact says how it was measured: exact, derived or inferred, with its source</li>
+      <li>Connection health from the kernel's own round-trip and resend counters</li>
+      <li>Disconnect, block a host or block an app, with undo</li>
+      <li>A command-line companion (ptctl) for scripts and AI assistants</li>
+    </ul>
+    <p>Everything is read on this computer. Nothing is sent anywhere.</p>
+  </description>
+  <launchable type="desktop-id">io.github.networkgrafh.desktop</launchable>
+  <url type="homepage">https://github.com/networkgrafh/process-traffic</url>
+  <developer id="io.github.networkgrafh"><name>Process Traffic authors</name></developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-11-07"/>
+  </releases>
+</component>
